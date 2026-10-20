@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { runDecisionRequest } from "./decisionSubmission";
 import {
   checkHealth,
   createDecision,
@@ -65,8 +66,6 @@ export default function App() {
 
   async function submit() {
     setSubmitting(true);
-    setError(null);
-    setDecision(null); // Never associate the preceding transaction’s decision with this request.
     const request: DecisionRequest = {
       transaction: {
         ...tx,
@@ -90,18 +89,12 @@ export default function App() {
       },
       ...risks,
     };
-    try {
-      const result = await createDecision(request);
-      if (result.event_id !== request.transaction.event_id || result.tenant_id !== request.transaction.tenant_id || result.correlation_id !== request.transaction.correlation_id) {
-        throw new Error("Decision response does not match the requested transaction");
-      }
-      setDecision(result);
-    } catch (e) {
-      setDecision(null);
-      setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSubmitting(false);
-    }
+    await runDecisionRequest(request, createDecision, {
+      onStart: () => { setDecision(null); setError(null); },
+      onSuccess: setDecision,
+      onFailure: setError,
+    });
+    setSubmitting(false);
   }
 
   function setTxField(key: keyof typeof tx) {
