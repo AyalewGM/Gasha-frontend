@@ -69,7 +69,9 @@ export interface FraudDecision {
   correlation_id: string;
 }
 
-const API_BASE = "/api";
+import { apiBasePath } from "./apiRouting";
+
+const API_BASE = apiBasePath(import.meta.env.VITE_API_BASE_PATH);
 
 export async function checkHealth(): Promise<boolean> {
   try {
