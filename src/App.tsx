@@ -66,6 +66,7 @@ export default function App() {
   async function submit() {
     setSubmitting(true);
     setError(null);
+    setDecision(null); // Never associate the preceding transaction’s decision with this request.
     const request: DecisionRequest = {
       transaction: {
         ...tx,
@@ -90,8 +91,13 @@ export default function App() {
       ...risks,
     };
     try {
-      setDecision(await createDecision(request));
+      const result = await createDecision(request);
+      if (result.event_id !== request.transaction.event_id || result.tenant_id !== request.transaction.tenant_id || result.correlation_id !== request.transaction.correlation_id) {
+        throw new Error("Decision response does not match the requested transaction");
+      }
+      setDecision(result);
     } catch (e) {
+      setDecision(null);
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
@@ -228,8 +234,11 @@ export default function App() {
 
         <section className="panel">
           <h2>Decision</h2>
-          {decision ? (
+          {submitting ? (
+            <div className="empty" role="status">Decision pending for the current transaction…</div>
+          ) : decision ? (
             <>
+              <p>Risk recommendation only — not a bank-executed intervention.</p>
               <div className={`decision-action action-${decision.action}`}>
                 {decision.action}
               </div>
