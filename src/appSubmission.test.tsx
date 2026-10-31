@@ -137,4 +137,20 @@ describe("App decision lifecycle", () => {
     expect(container.querySelector(".error")?.textContent).toContain("500");
     expect(button.disabled).toBe(false);
   });
+  it("loading a synthetic preset is local, updates the inputs and clears an earlier recommendation", async () => {
+    await clickSubmit();
+    expect(container.querySelector(".decision-action")).not.toBeNull();
+    const requestsBefore = vi.mocked(fetch).mock.calls.length;
+    const picker = container.querySelector<HTMLSelectElement>("#synthetic-scenario")!;
+    await act(async () => {
+      picker.value = "uc02";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(picker.value).toBe("uc02");
+    expect(container.textContent).toContain("no cross-bank or receiving-bank records");
+    expect(container.querySelector(".risks")?.textContent).toContain("0.98");
+    expect(container.querySelector(".decision-action")).toBeNull();
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(requestsBefore);
+  });
+
 });

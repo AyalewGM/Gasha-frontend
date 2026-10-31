@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { runDecisionRequest } from "./decisionSubmission";
+import { findSyntheticScenario, SYNTHETIC_SCENARIOS, type RiskKey } from "./syntheticScenarios";
 import {
   checkHealth,
   createDecision,
@@ -19,8 +20,6 @@ const RISK_FIELDS = [
   ["journey_risk", "Journey"],
 ] as const;
 
-type RiskKey = (typeof RISK_FIELDS)[number][0];
-
 const BENEFICIARY_TYPES: BeneficiaryType[] = [
   "internal",
   "external",
@@ -34,6 +33,7 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
   const [decision, setDecision] = useState<FraudDecision | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scenarioId, setScenarioId] = useState("manual");
 
   const [tx, setTx] = useState({
     tenant_id: "tenant-a",
@@ -97,15 +97,33 @@ export default function App() {
     setSubmitting(false);
   }
 
+  function clearStaleDecision() {
+    setDecision(null);
+    setError(null);
+  }
+
+  function selectScenario(id: string) {
+    if (submitting) return;
+    setScenarioId(id);
+    const scenario = findSyntheticScenario(id);
+    if (!scenario) return;
+    setTx({ ...scenario.transaction });
+    setRisks({ ...scenario.risks });
+    clearStaleDecision();
+  }
+
   function setTxField(key: keyof typeof tx) {
-    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setScenarioId("manual");
+      clearStaleDecision();
       setTx((t) => ({ ...t, [key]: e.target.value }));
+    };
   }
 
   return (
     <div className="app">
       <header>
-        <h1>Gasha — Fraud Decision Console</h1>
+        <h1>Gasha — Synthetic Fraud Decision Console</h1>
         <span className={`health ${healthy ? "up" : "down"}`}>
           {healthy === null ? "checking…" : healthy ? "API up" : "API down"}
         </span>
@@ -113,6 +131,24 @@ export default function App() {
 
       <div className="grid">
         <section className="panel">
+          <div className="field">
+            <label htmlFor="synthetic-scenario">Illustrative synthetic scenario</label>
+            <select
+              id="synthetic-scenario"
+              value={scenarioId}
+              disabled={submitting}
+              onChange={(e) => selectScenario(e.target.value)}
+            >
+              <option value="manual">Manual synthetic inputs</option>
+              {SYNTHETIC_SCENARIOS.map((scenario) => (
+                <option key={scenario.id} value={scenario.id}>{scenario.label}</option>
+              ))}
+            </select>
+            <small>
+              {findSyntheticScenario(scenarioId)?.description ??
+                "These inputs are illustrative, not bank-approved data, verified fraud or intervention evidence."}
+            </small>
+          </div>
           <h2>Transaction</h2>
           <div className="row">
             <div className="field">
@@ -206,9 +242,11 @@ export default function App() {
                   max={1}
                   step={0.01}
                   value={risks[key]}
-                  onChange={(e) =>
-                    setRisks((r) => ({ ...r, [key]: Number(e.target.value) }))
-                  }
+                  onChange={(e) => {
+                    setScenarioId("manual");
+                    clearStaleDecision();
+                    setRisks((r) => ({ ...r, [key]: Number(e.target.value) }));
+                  }}
                 />
                 <output>{risks[key].toFixed(2)}</output>
               </label>

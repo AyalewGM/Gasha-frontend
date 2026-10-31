@@ -22,6 +22,8 @@ npm run dev -- --host 127.0.0.1
 
 Open `http://127.0.0.1:5173`. The local Vite proxy forwards `/api/v1/decisions` to `http://127.0.0.1:8000/v1/decisions`. Use synthetic transaction identifiers only. The frontend displays the proposed action, risk score, reason codes and policy-version labels. No payment, bank action or authoritative evidence is created.
 
+The scenario picker includes three **illustrative** synthetic patterns (new-beneficiary/relationship anomaly, beneficiary/network concentration, and device/session journey anomaly). Selecting one changes only the local form and risk sliders; it does not submit an outcome, attest a UC-specific detector, simulate bank acknowledgment or provide evidence of detection quality. Manual edits clear the previous recommendation. All generated transaction/event identifiers and risk signals are synthetic; do not interpret a recommended hold/block as executed.
+
 ## Development checks
 
 - `npm run lint` — ESLint
