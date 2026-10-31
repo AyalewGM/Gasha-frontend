@@ -71,6 +71,46 @@ export interface FraudDecision {
 
 import { apiBasePath } from "./apiRouting";
 
+const SYNTHETIC_DECISION_ACTIONS: ReadonlySet<string> = new Set([
+  "allow", "monitor", "challenge", "review", "hold", "block", "no_action_shadow",
+]);
+
+/** Validate the untrusted HTTP payload before it can drive a recommendation UI.
+ * This does not confer bank-side authenticity, tenant authorization or action.
+ */
+function parseSyntheticDecision(value: unknown): FraudDecision {
+  const invalid = () => new Error("Invalid synthetic decision response");
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw invalid();
+  }
+  const record = value as Record<string, unknown>;
+  const requiredStrings = [
+    "tenant_id", "event_id", "correlation_id", "policy_version",
+    "rule_version", "configuration_version", "decided_at",
+  ];
+  if (
+    requiredStrings.some((key) =>
+      typeof record[key] !== "string" || !(record[key] as string).trim()
+    ) ||
+    typeof record.action !== "string" ||
+    !SYNTHETIC_DECISION_ACTIONS.has(record.action) ||
+    typeof record.risk_score !== "number" ||
+    !Number.isFinite(record.risk_score) ||
+    record.risk_score < 0 ||
+    record.risk_score > 1 ||
+    !Array.isArray(record.reason_codes) ||
+    !record.reason_codes.every((code: unknown) => typeof code === "string") ||
+    (record.model_version !== undefined &&
+      record.model_version !== null &&
+      typeof record.model_version !== "string") ||
+    Number.isNaN(Date.parse(record.decided_at as string))
+  ) {
+    throw invalid();
+  }
+  return value as FraudDecision;
+}
+
+
 const API_BASE = apiBasePath(import.meta.env.VITE_API_BASE_PATH);
 
 export async function checkHealth(): Promise<boolean> {
@@ -106,5 +146,11 @@ export async function createDecision(
     const detail = await res.text();
     throw new Error(`Decision request failed (${res.status}): ${detail}`);
   }
-  return res.json();
+  let body: unknown;
+  try {
+    body = await res.json();
+  } catch {
+    throw new Error("Invalid synthetic decision response");
+  }
+  return parseSyntheticDecision(body);
 }
