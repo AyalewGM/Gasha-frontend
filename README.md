@@ -1,32 +1,39 @@
-# Gasha Frontend
+# Gasha Frontend — synthetic decision console
 
-Decision console for the [Gasha backend](https://github.com/AyalewGM/Gasha-backend) real-time fraud decision API.
+This is an **internal, non-authoritative synthetic UI scaffold** for Gasha UC-01/02/03 experimentation. It presents risk *recommendations*, not executed banking interventions. It must not be deployed to a bank, exposed to a bank network, or supplied with real customer data or credentials.
 
-## Local development
+## Run a local synthetic demonstration
 
-```bash
-npm install
-npm run dev
-```
+The current form deliberately permits caller-selected risk signals and policy values. Those are accepted **only** by the separate synthetic backend application; the protected `gasha.api.main:app` correctly rejects them and requires a trusted identity, security audit and server-selected context.
 
-The dev server proxies `/api/*` to `http://localhost:8000`, so run the backend first:
+In a terminal in `Gasha-backend`:
 
 ```bash
-# in Gasha-backend
-uvicorn gasha.api.main:app --reload
+pip install -e ".[dev]"
+uvicorn gasha.api.synthetic:app --host 127.0.0.1 --port 8000
 ```
 
-Then open http://localhost:5173 — submit a canonical transaction with intelligence inputs and see the `FraudDecision` (action, risk score, reason codes, version provenance).
+In another terminal in this repository:
 
-## Scripts
+```bash
+npm ci
+npm run dev -- --host 127.0.0.1
+```
 
-- `npm run dev` — dev server
-- `npm run build` — type-check + production build
+Open `http://127.0.0.1:5173`. The local Vite proxy forwards `/api/v1/decisions` to `http://127.0.0.1:8000/v1/decisions`. Use synthetic transaction identifiers only. The frontend displays the proposed action, risk score, reason codes and policy-version labels. No payment, bank action or authoritative evidence is created.
+
+## Development checks
+
 - `npm run lint` — ESLint
-- `npm test` — Vitest
+- `npm test` — Vitest (routing and UI state)
+- `npm run build` — TypeScript and production-bundle compile, **not approval to deploy**
 
-## Routing and security
+The local `npm run preview` server uses the same proxy rules as development. Set `VITE_API_BASE_PATH` at build time only if you change the **same-origin** local proxy prefix; the default is `/api`. `GASHA_LOCAL_API_TARGET` defaults to `http://127.0.0.1:8000`; keep it on a loopback synthetic server. Never provide browser-side bank tokens, bank endpoints, real PII or cross-origin service credentials.
 
-Production serves the built static frontend behind an authenticated, TLS-terminated reverse proxy. Route the configured same-origin prefix (default `/api`) to the approved Gasha backend; strip that prefix to match backend routes (`/api/v1/decisions` → `/v1/decisions`; `/api/health/live` → `/health/live`). Set `VITE_API_BASE_PATH` **at build time** only when the reverse proxy uses a different same-origin prefix. Never configure browser-side backend credentials or a cross-origin bank API endpoint. Vite's development and `npm run preview` servers both proxy to `GASHA_LOCAL_API_TARGET` (default `http://127.0.0.1:8000`), which is for local use only, not deployment.
+## Protected API and bank-facing work — not implemented here
 
-Backend-side authentication, tenant authorization, CSRF protection where cookie sessions are used, and production ingress hardening require independent security acceptance. The console's tenant field is not a security boundary. Outputs represent risk recommendations, not proof that a bank action has been executed.
+The protected backend `gasha.api.main:app` requires a trusted authenticated principal and accepts only `{"transaction": ...}` for `POST /v1/decisions`. It does **not** accept this UI's client-selected `policy`, risk scores, role, tenant authority or enforcement mode. Therefore this scaffold must **not** be advertised as compatible with the protected bank API.
+
+The future authenticated analyst workflow must use a bank-approved identity/session design; server-authorized tenant and capability scope; trusted policy/signal lineage; denied/expired/revoked-session handling; case history and evidence provenance; appropriate CSRF/TLS/ingress defenses; and independent Security and QA acceptance. Never reuse the synthetic trust model for a bank-facing service.
+
+This PR provides only a safe local starting point, not CBE acceptance, bank deployment or permission to activate intervention.
