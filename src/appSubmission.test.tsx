@@ -153,4 +153,43 @@ describe("App decision lifecycle", () => {
     expect(vi.mocked(fetch).mock.calls).toHaveLength(requestsBefore);
   });
 
+  it("discards an in-flight success when the transaction is edited before the reply", async () => {
+    const normalFetch = installFetch(backend);
+    let releaseDecision: () => Promise<void> = async () => {
+      throw new Error("Decision request was not issued");
+    };
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/v1/decisions") && init?.method === "POST") {
+        return new Promise<Response>((resolve) => {
+          releaseDecision = async () => {
+            resolve(await normalFetch(input, init));
+          };
+        });
+      }
+      return normalFetch(input, init);
+    }));
+
+    const button = container.querySelector<HTMLButtonElement>("button.submit")!;
+    act(() => {
+      button.click();
+    });
+    expect(container.textContent).toContain("Decision pending");
+
+    // Transaction fields remain editable while a synthetic request is pending.
+    // The eventual success belongs to the old input snapshot, not this form.
+    const beneficiaryType = container.querySelector<HTMLSelectElement>(".row select")!;
+    act(() => {
+      beneficiaryType.value = "wallet";
+      beneficiaryType.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(beneficiaryType.value).toBe("wallet");
+
+    await act(async () => {
+      await releaseDecision();
+    });
+    expect(container.querySelector(".decision-action")).toBeNull();
+    expect(container.querySelector(".error")).toBeNull();
+    expect(button.disabled).toBe(false);
+  });
+
 });
