@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { runDecisionRequest } from "./decisionSubmission";
 import { findSyntheticScenario, SYNTHETIC_SCENARIOS, type RiskKey } from "./syntheticScenarios";
 import {
@@ -34,6 +34,8 @@ export default function App() {
   const [decision, setDecision] = useState<FraudDecision | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [scenarioId, setScenarioId] = useState("manual");
+  // A response for a previous input revision must never appear on edited inputs.
+  const inputRevision = useRef(0);
 
   const [tx, setTx] = useState({
     tenant_id: "tenant-a",
@@ -66,6 +68,7 @@ export default function App() {
 
   async function submit() {
     setSubmitting(true);
+    const submittedRevision = inputRevision.current;
     const request: DecisionRequest = {
       transaction: {
         ...tx,
@@ -91,13 +94,18 @@ export default function App() {
     };
     await runDecisionRequest(request, createDecision, {
       onStart: () => { setDecision(null); setError(null); },
-      onSuccess: setDecision,
-      onFailure: setError,
+      onSuccess: (result) => {
+        if (inputRevision.current === submittedRevision) setDecision(result);
+      },
+      onFailure: (message) => {
+        if (inputRevision.current === submittedRevision) setError(message);
+      },
     });
     setSubmitting(false);
   }
 
   function clearStaleDecision() {
+    inputRevision.current += 1;
     setDecision(null);
     setError(null);
   }
