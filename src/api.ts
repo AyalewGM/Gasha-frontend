@@ -76,7 +76,19 @@ const API_BASE = apiBasePath(import.meta.env.VITE_API_BASE_PATH);
 export async function checkHealth(): Promise<boolean> {
   try {
     const res = await fetch(`${API_BASE}/health/live`);
-    return res.ok;
+    if (!res.ok) return false;
+    // Vite's SPA fallback can return 200 HTML when the proxy/backend is missing.
+    // Only the synthetic FastAPI liveness contract is evidence of "API up".
+    const contentType = res.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+    if (contentType !== "application/json") return false;
+    const data: unknown = await res.json();
+    return (
+      typeof data === "object" &&
+      data !== null &&
+      !Array.isArray(data) &&
+      "status" in data &&
+      data.status === "ok"
+    );
   } catch {
     return false;
   }
