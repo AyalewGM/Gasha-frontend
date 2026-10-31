@@ -8,8 +8,19 @@ export default defineConfig(({ mode }) => {
   const apiPrefix = apiBasePath(env.VITE_API_BASE_PATH);
   const backendTarget = env.GASHA_LOCAL_API_TARGET || "http://127.0.0.1:8000";
   const target = new URL(backendTarget);
-  if (!["http:", "https:"].includes(target.protocol) || target.username || target.password || target.search || target.hash || target.pathname !== "/") {
-    throw new Error("GASHA_LOCAL_API_TARGET must be a credential-free HTTP(S) backend origin");
+  // Synthetic input is caller-controlled: never proxy it outside this host.
+  // URL.hostname normalizes IPv6 loopback to "[::1]".
+  const loopbackHosts = new Set(["127.0.0.1", "localhost", "[::1]"]);
+  if (
+    !["http:", "https:"].includes(target.protocol) ||
+    !loopbackHosts.has(target.hostname) ||
+    target.username ||
+    target.password ||
+    target.search ||
+    target.hash ||
+    target.pathname !== "/"
+  ) {
+    throw new Error("GASHA_LOCAL_API_TARGET must be a credential-free loopback HTTP(S) origin");
   }
   const proxy = {
     [apiPrefix]: {
