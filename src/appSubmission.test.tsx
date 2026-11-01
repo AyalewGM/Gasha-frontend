@@ -88,7 +88,7 @@ describe("App decision lifecycle", () => {
 
   it("associates each transaction field label with its editable control", () => {
     const labels = Array.from(container.querySelectorAll<HTMLLabelElement>(".row .field > label"));
-    expect(labels).toHaveLength(10);
+    expect(labels).toHaveLength(11);
     const ids = new Set<string>();
     for (const label of labels) {
       const control = label.parentElement?.querySelector("input, select");
@@ -98,6 +98,20 @@ describe("App decision lifecycle", () => {
       ids.add(label.htmlFor);
     }
     expect(ids.size).toBe(labels.length);
+  });
+
+  it("shows the editable UC-03 synthetic device identifier without submitting a request", async () => {
+    const picker = container.querySelector<HTMLSelectElement>("#synthetic-scenario")!;
+    const requestsBefore = vi.mocked(fetch).mock.calls.length;
+    await act(async () => {
+      picker.value = "uc03";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const device = container.querySelector<HTMLInputElement>("#tx-device-id");
+    expect(device?.value).toBe("synthetic-new-device-03");
+    expect(container.querySelector<HTMLLabelElement>('label[for="tx-device-id"]')?.control).toBe(device);
+    expect(container.querySelector(".decision-action")).toBeNull();
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(requestsBefore);
   });
 
   it("reports the actual synthetic FastAPI JSON liveness as API up", () => {
