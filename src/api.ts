@@ -164,8 +164,9 @@ export async function createDecision(
     body: JSON.stringify(request),
   });
   if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`Decision request failed (${res.status}): ${detail}`);
+    // Do not echo untrusted backend error bodies into the synthetic UI:
+    // validation details may include caller-supplied transaction fields.
+    throw new Error(`Decision request failed (${res.status})`);
   }
   let body: unknown;
   try {

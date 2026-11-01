@@ -87,6 +87,17 @@ describe("synthetic decision HTTP response validation", () => {
     }));
   });
 
+  it("does not expose untrusted transaction details from a synthetic HTTP error", async () => {
+    const untrustedDetail = "synthetic-sensitive-customer-field";
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ detail: untrustedDetail }), {
+        status: 422,
+        headers: { "Content-Type": "application/json" },
+      }),
+    ));
+    await expect(createDecision(request)).rejects.toThrow(/^Decision request failed \(422\)$/);
+  });
+
   it("fails closed when an HTTP 200 contains Vite HTML rather than JSON", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(
       new Response("<html>SPA fallback</html>", {
