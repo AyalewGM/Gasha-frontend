@@ -248,6 +248,17 @@ export default function App() {
             )}
           </div>
 
+          <div className="row">
+            <div className="field">
+              <label htmlFor="tx-device-id">Device (synthetic)</label>
+              <input
+                id="tx-device-id"
+                value={tx.device_id}
+                onChange={setTxField("device_id")}
+              />
+            </div>
+          </div>
+
           <h2>Intelligence inputs</h2>
           <div className="risks">
             {RISK_FIELDS.map(([key, label]) => (
