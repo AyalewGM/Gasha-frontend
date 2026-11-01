@@ -14,7 +14,7 @@ describe("synthetic API liveness indicator", () => {
     );
     vi.stubGlobal("fetch", fetchMock);
     expect(await checkHealth()).toBe(true);
-    expect(fetchMock).toHaveBeenCalledWith("/api/health/live");
+    expect(fetchMock).toHaveBeenCalledWith("/api/health/live", { redirect: "error" });
   });
 
   it.each([
@@ -26,6 +26,13 @@ describe("synthetic API liveness indicator", () => {
   ])("does not report API up for %s", async (_description, reply) => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(reply));
     expect(await checkHealth()).toBe(false);
+  });
+
+  it("fails closed on a redirected liveness response", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("redirect blocked"));
+    vi.stubGlobal("fetch", fetchMock);
+    expect(await checkHealth()).toBe(false);
+    expect(fetchMock).toHaveBeenCalledWith("/api/health/live", { redirect: "error" });
   });
 
   it("does not report API up when the synthetic backend is unreachable", async () => {

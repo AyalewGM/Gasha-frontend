@@ -37,6 +37,7 @@ describe("synthetic decision HTTP response validation", () => {
     await expect(createDecision(request)).resolves.toEqual(validDecision);
     expect(fetch).toHaveBeenCalledWith("/api/v1/decisions", expect.objectContaining({
       method: "POST",
+      redirect: "error",
     }));
   });
 
@@ -75,6 +76,15 @@ describe("synthetic decision HTTP response validation", () => {
     const leapDay = { ...validDecision, decided_at: "2024-02-29T23:59:59+05:30" };
     stubResponse(leapDay);
     await expect(createDecision(request)).resolves.toEqual(leapDay);
+  });
+
+  it("rejects redirects without following them for synthetic decision requests", async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError("redirect blocked"));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(createDecision(request)).rejects.toThrow("redirect blocked");
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/decisions", expect.objectContaining({
+      method: "POST", redirect: "error",
+    }));
   });
 
   it("fails closed when an HTTP 200 contains Vite HTML rather than JSON", async () => {
