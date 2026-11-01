@@ -71,6 +71,10 @@ export interface FraudDecision {
 
 import { apiBasePath } from "./apiRouting";
 
+// Reject timezone-naive timestamps: the 01:00 hour repeats during DST fall-back.
+// The synthetic recommendation must carry an unambiguous absolute instant.
+const AWARE_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-](?:0\d|1[0-3]):[0-5]\d|[+-]14:00)$/;
+
 const SYNTHETIC_DECISION_ACTIONS: ReadonlySet<string> = new Set([
   "allow", "monitor", "challenge", "review", "hold", "block", "no_action_shadow",
 ]);
@@ -103,7 +107,8 @@ function parseSyntheticDecision(value: unknown): FraudDecision {
     (record.model_version !== undefined &&
       record.model_version !== null &&
       typeof record.model_version !== "string") ||
-    Number.isNaN(Date.parse(record.decided_at as string))
+    (!AWARE_ISO_TIMESTAMP.test(record.decided_at as string) ||
+      Number.isNaN(Date.parse(record.decided_at as string)))
   ) {
     throw invalid();
   }
