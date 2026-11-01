@@ -162,39 +162,42 @@ export default function App() {
           <h2>Transaction</h2>
           <div className="row">
             <div className="field">
-              <label>Tenant</label>
-              <input value={tx.tenant_id} onChange={setTxField("tenant_id")} />
+              <label htmlFor="tx-tenant">Tenant</label>
+              <input id="tx-tenant" value={tx.tenant_id} onChange={setTxField("tenant_id")} />
             </div>
             <div className="field">
-              <label>Channel</label>
-              <input value={tx.channel} onChange={setTxField("channel")} />
+              <label htmlFor="tx-channel">Channel</label>
+              <input id="tx-channel" value={tx.channel} onChange={setTxField("channel")} />
             </div>
           </div>
           <div className="row">
             <div className="field">
-              <label>Type</label>
+              <label htmlFor="tx-transaction-type">Type</label>
               <input
+                id="tx-transaction-type"
                 value={tx.transaction_type}
                 onChange={setTxField("transaction_type")}
               />
             </div>
             <div className="field">
-              <label>Amount</label>
-              <input value={tx.amount} onChange={setTxField("amount")} />
+              <label htmlFor="tx-amount">Amount</label>
+              <input id="tx-amount" value={tx.amount} onChange={setTxField("amount")} />
             </div>
           </div>
           <div className="row">
             <div className="field">
-              <label>Currency</label>
+              <label htmlFor="tx-currency">Currency</label>
               <input
+                id="tx-currency"
                 value={tx.currency}
                 maxLength={3}
                 onChange={setTxField("currency")}
               />
             </div>
             <div className="field">
-              <label>Sender customer</label>
+              <label htmlFor="tx-sender-customer">Sender customer</label>
               <input
+                id="tx-sender-customer"
                 value={tx.sender_customer_id}
                 onChange={setTxField("sender_customer_id")}
               />
@@ -202,15 +205,17 @@ export default function App() {
           </div>
           <div className="row">
             <div className="field">
-              <label>Sender account</label>
+              <label htmlFor="tx-sender-account">Sender account</label>
               <input
+                id="tx-sender-account"
                 value={tx.sender_account_id}
                 onChange={setTxField("sender_account_id")}
               />
             </div>
             <div className="field">
-              <label>Beneficiary</label>
+              <label htmlFor="tx-beneficiary">Beneficiary</label>
               <input
+                id="tx-beneficiary"
                 value={tx.beneficiary_id}
                 onChange={setTxField("beneficiary_id")}
               />
@@ -218,8 +223,9 @@ export default function App() {
           </div>
           <div className="row">
             <div className="field">
-              <label>Beneficiary type</label>
+              <label htmlFor="tx-beneficiary-type">Beneficiary type</label>
               <select
+                id="tx-beneficiary-type"
                 value={tx.beneficiary_type}
                 onChange={setTxField("beneficiary_type")}
               >
@@ -232,8 +238,9 @@ export default function App() {
             </div>
             {tx.beneficiary_type === "external" && (
               <div className="field">
-                <label>Destination institution</label>
+                <label htmlFor="tx-destination-institution">Destination institution</label>
                 <input
+                  id="tx-destination-institution"
                   value={tx.destination_institution_id}
                   onChange={setTxField("destination_institution_id")}
                 />
