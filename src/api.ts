@@ -73,7 +73,7 @@ import { apiBasePath } from "./apiRouting";
 
 // Reject timezone-naive timestamps: the 01:00 hour repeats during DST fall-back.
 // The synthetic recommendation must carry an unambiguous absolute instant.
-const AWARE_ISO_TIMESTAMP = /^(\\d{4})-(\\d{2})-(\\d{2})T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|[+-](?:0\\d|1[0-3]):[0-5]\\d|[+-]14:00)$/;
+const AWARE_ISO_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d+)?(?:Z|[+-](?:0\d|1[0-3]):[0-5]\d|[+-]14:00)$/;
 
 /** Date.parse normalizes impossible calendar dates (for example, February 30).
  * Synthetic provenance must represent a real, unambiguous calendar instant.
