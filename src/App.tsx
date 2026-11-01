@@ -328,8 +328,12 @@ export default function App() {
                 <dd>{decision.rule_version}</dd>
                 <dt>Config</dt>
                 <dd>{decision.configuration_version}</dd>
-                <dt>Decided at</dt>
-                <dd>{new Date(decision.decided_at).toLocaleString()}</dd>
+                <dt>Decided at (UTC)</dt>
+                <dd>
+                  <time dateTime={decision.decided_at}>
+                    {new Date(decision.decided_at).toISOString()}
+                  </time>
+                </dd>
               </dl>
             </>
           ) : (
