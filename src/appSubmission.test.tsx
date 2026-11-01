@@ -26,6 +26,12 @@ function installFetch(backend: FakeBackend) {
     if (url.endsWith("/v1/decisions") && init?.method === "POST") {
       const body = JSON.parse(String(init.body)) as {
         transaction: { tenant_id: string; event_id: string; correlation_id: string };
+        policy: {
+          configuration_version: string;
+          policy_version: string;
+          rule_version: string;
+          model_version?: string | null;
+        };
       };
       if (backend.nextDecisionStatus !== 200) {
         return jsonResponse(backend.nextDecisionStatus, { detail: "backend rejected" });
@@ -37,9 +43,10 @@ function installFetch(backend: FakeBackend) {
         action: "review",
         risk_score: 0.5,
         reason_codes: ["RC-1"],
-        policy_version: "decision-policy-5",
-        configuration_version: "cfg",
-        rule_version: "rules",
+        policy_version: body.policy.policy_version,
+        configuration_version: body.policy.configuration_version,
+        rule_version: body.policy.rule_version,
+        model_version: body.policy.model_version ?? null,
         decided_at: new Date().toISOString(),
       });
     }
