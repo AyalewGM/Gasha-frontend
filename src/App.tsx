@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { runDecisionRequest } from "./decisionSubmission";
+import { findSyntheticScenario, SYNTHETIC_SCENARIOS, type RiskKey } from "./syntheticScenarios";
 import {
   checkHealth,
   createDecision,
@@ -19,8 +20,6 @@ const RISK_FIELDS = [
   ["journey_risk", "Journey"],
 ] as const;
 
-type RiskKey = (typeof RISK_FIELDS)[number][0];
-
 const BENEFICIARY_TYPES: BeneficiaryType[] = [
   "internal",
   "external",
@@ -34,6 +33,9 @@ export default function App() {
   const [submitting, setSubmitting] = useState(false);
   const [decision, setDecision] = useState<FraudDecision | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [scenarioId, setScenarioId] = useState("manual");
+  // A response for a previous input revision must never appear on edited inputs.
+  const inputRevision = useRef(0);
 
   const [tx, setTx] = useState({
     tenant_id: "tenant-a",
@@ -66,6 +68,7 @@ export default function App() {
 
   async function submit() {
     setSubmitting(true);
+    const submittedRevision = inputRevision.current;
     const request: DecisionRequest = {
       transaction: {
         ...tx,
@@ -91,21 +94,46 @@ export default function App() {
     };
     await runDecisionRequest(request, createDecision, {
       onStart: () => { setDecision(null); setError(null); },
-      onSuccess: setDecision,
-      onFailure: setError,
+      onSuccess: (result) => {
+        if (inputRevision.current === submittedRevision) setDecision(result);
+      },
+      onFailure: (message) => {
+        if (inputRevision.current === submittedRevision) setError(message);
+      },
     });
     setSubmitting(false);
   }
 
+  function clearStaleDecision() {
+    inputRevision.current += 1;
+    setDecision(null);
+    setError(null);
+  }
+
+  function selectScenario(id: string) {
+    if (submitting) return;
+    setScenarioId(id);
+    // Returning to manual inputs also changes the scenario context: clear the
+    // prior recommendation even though the editable values stay in place.
+    clearStaleDecision();
+    const scenario = findSyntheticScenario(id);
+    if (!scenario) return;
+    setTx({ ...scenario.transaction });
+    setRisks({ ...scenario.risks });
+  }
+
   function setTxField(key: keyof typeof tx) {
-    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) =>
+    return (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+      setScenarioId("manual");
+      clearStaleDecision();
       setTx((t) => ({ ...t, [key]: e.target.value }));
+    };
   }
 
   return (
     <div className="app">
       <header>
-        <h1>Gasha — Fraud Decision Console</h1>
+        <h1>Gasha — Synthetic Fraud Decision Console</h1>
         <span className={`health ${healthy ? "up" : "down"}`}>
           {healthy === null ? "checking…" : healthy ? "API up" : "API down"}
         </span>
@@ -113,42 +141,63 @@ export default function App() {
 
       <div className="grid">
         <section className="panel">
+          <div className="field">
+            <label htmlFor="synthetic-scenario">Illustrative synthetic scenario</label>
+            <select
+              id="synthetic-scenario"
+              value={scenarioId}
+              disabled={submitting}
+              onChange={(e) => selectScenario(e.target.value)}
+            >
+              <option value="manual">Manual synthetic inputs</option>
+              {SYNTHETIC_SCENARIOS.map((scenario) => (
+                <option key={scenario.id} value={scenario.id}>{scenario.label}</option>
+              ))}
+            </select>
+            <small>
+              {findSyntheticScenario(scenarioId)?.description ??
+                "These inputs are illustrative, not bank-approved data, verified fraud or intervention evidence."}
+            </small>
+          </div>
           <h2>Transaction</h2>
           <div className="row">
             <div className="field">
-              <label>Tenant</label>
-              <input value={tx.tenant_id} onChange={setTxField("tenant_id")} />
+              <label htmlFor="tx-tenant">Tenant</label>
+              <input id="tx-tenant" value={tx.tenant_id} onChange={setTxField("tenant_id")} />
             </div>
             <div className="field">
-              <label>Channel</label>
-              <input value={tx.channel} onChange={setTxField("channel")} />
+              <label htmlFor="tx-channel">Channel</label>
+              <input id="tx-channel" value={tx.channel} onChange={setTxField("channel")} />
             </div>
           </div>
           <div className="row">
             <div className="field">
-              <label>Type</label>
+              <label htmlFor="tx-transaction-type">Type</label>
               <input
+                id="tx-transaction-type"
                 value={tx.transaction_type}
                 onChange={setTxField("transaction_type")}
               />
             </div>
             <div className="field">
-              <label>Amount</label>
-              <input value={tx.amount} onChange={setTxField("amount")} />
+              <label htmlFor="tx-amount">Amount</label>
+              <input id="tx-amount" value={tx.amount} onChange={setTxField("amount")} />
             </div>
           </div>
           <div className="row">
             <div className="field">
-              <label>Currency</label>
+              <label htmlFor="tx-currency">Currency</label>
               <input
+                id="tx-currency"
                 value={tx.currency}
                 maxLength={3}
                 onChange={setTxField("currency")}
               />
             </div>
             <div className="field">
-              <label>Sender customer</label>
+              <label htmlFor="tx-sender-customer">Sender customer</label>
               <input
+                id="tx-sender-customer"
                 value={tx.sender_customer_id}
                 onChange={setTxField("sender_customer_id")}
               />
@@ -156,15 +205,17 @@ export default function App() {
           </div>
           <div className="row">
             <div className="field">
-              <label>Sender account</label>
+              <label htmlFor="tx-sender-account">Sender account</label>
               <input
+                id="tx-sender-account"
                 value={tx.sender_account_id}
                 onChange={setTxField("sender_account_id")}
               />
             </div>
             <div className="field">
-              <label>Beneficiary</label>
+              <label htmlFor="tx-beneficiary">Beneficiary</label>
               <input
+                id="tx-beneficiary"
                 value={tx.beneficiary_id}
                 onChange={setTxField("beneficiary_id")}
               />
@@ -172,8 +223,9 @@ export default function App() {
           </div>
           <div className="row">
             <div className="field">
-              <label>Beneficiary type</label>
+              <label htmlFor="tx-beneficiary-type">Beneficiary type</label>
               <select
+                id="tx-beneficiary-type"
                 value={tx.beneficiary_type}
                 onChange={setTxField("beneficiary_type")}
               >
@@ -186,13 +238,25 @@ export default function App() {
             </div>
             {tx.beneficiary_type === "external" && (
               <div className="field">
-                <label>Destination institution</label>
+                <label htmlFor="tx-destination-institution">Destination institution</label>
                 <input
+                  id="tx-destination-institution"
                   value={tx.destination_institution_id}
                   onChange={setTxField("destination_institution_id")}
                 />
               </div>
             )}
+          </div>
+
+          <div className="row">
+            <div className="field">
+              <label htmlFor="tx-device-id">Device (synthetic)</label>
+              <input
+                id="tx-device-id"
+                value={tx.device_id}
+                onChange={setTxField("device_id")}
+              />
+            </div>
           </div>
 
           <h2>Intelligence inputs</h2>
@@ -206,9 +270,11 @@ export default function App() {
                   max={1}
                   step={0.01}
                   value={risks[key]}
-                  onChange={(e) =>
-                    setRisks((r) => ({ ...r, [key]: Number(e.target.value) }))
-                  }
+                  onChange={(e) => {
+                    setScenarioId("manual");
+                    clearStaleDecision();
+                    setRisks((r) => ({ ...r, [key]: Number(e.target.value) }));
+                  }}
                 />
                 <output>{risks[key].toFixed(2)}</output>
               </label>
@@ -262,8 +328,12 @@ export default function App() {
                 <dd>{decision.rule_version}</dd>
                 <dt>Config</dt>
                 <dd>{decision.configuration_version}</dd>
-                <dt>Decided at</dt>
-                <dd>{new Date(decision.decided_at).toLocaleString()}</dd>
+                <dt>Decided at (UTC)</dt>
+                <dd>
+                  <time dateTime={decision.decided_at}>
+                    {new Date(decision.decided_at).toISOString()}
+                  </time>
+                </dd>
               </dl>
             </>
           ) : (

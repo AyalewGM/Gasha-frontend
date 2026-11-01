@@ -15,17 +15,24 @@ function jsonResponse(status: number, body: unknown): Response {
 
 interface FakeBackend {
   nextDecisionStatus: number;
+  decisionTimestamp?: string;
 }
 
 function installFetch(backend: FakeBackend) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/health/live")) {
-      return jsonResponse(200, { status: "live" });
+      return jsonResponse(200, { status: "ok" });
     }
     if (url.endsWith("/v1/decisions") && init?.method === "POST") {
       const body = JSON.parse(String(init.body)) as {
         transaction: { tenant_id: string; event_id: string; correlation_id: string };
+        policy: {
+          configuration_version: string;
+          policy_version: string;
+          rule_version: string;
+          model_version?: string | null;
+        };
       };
       if (backend.nextDecisionStatus !== 200) {
         return jsonResponse(backend.nextDecisionStatus, { detail: "backend rejected" });
@@ -37,10 +44,11 @@ function installFetch(backend: FakeBackend) {
         action: "review",
         risk_score: 0.5,
         reason_codes: ["RC-1"],
-        policy_version: "decision-policy-5",
-        configuration_version: "cfg",
-        rule_version: "rules",
-        decided_at: new Date().toISOString(),
+        policy_version: body.policy.policy_version,
+        configuration_version: body.policy.configuration_version,
+        rule_version: body.policy.rule_version,
+        model_version: body.policy.model_version ?? null,
+        decided_at: backend.decisionTimestamp ?? new Date().toISOString(),
       });
     }
     return jsonResponse(404, { detail: `unhandled: ${url}` });
@@ -79,6 +87,53 @@ describe("App decision lifecycle", () => {
     });
   }
 
+  it("associates each transaction field label with its editable control", () => {
+    const labels = Array.from(container.querySelectorAll<HTMLLabelElement>(".row .field > label"));
+    expect(labels).toHaveLength(11);
+    const ids = new Set<string>();
+    for (const label of labels) {
+      const control = label.parentElement?.querySelector("input, select");
+      expect(control).not.toBeNull();
+      expect(label.htmlFor).toBe(control?.id);
+      expect(label.control).toBe(control);
+      ids.add(label.htmlFor);
+    }
+    expect(ids.size).toBe(labels.length);
+  });
+
+  it("shows the editable UC-03 synthetic device identifier without submitting a request", async () => {
+    const picker = container.querySelector<HTMLSelectElement>("#synthetic-scenario")!;
+    const requestsBefore = vi.mocked(fetch).mock.calls.length;
+    await act(async () => {
+      picker.value = "uc03";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    const device = container.querySelector<HTMLInputElement>("#tx-device-id");
+    expect(device?.value).toBe("synthetic-new-device-03");
+    expect(container.querySelector<HTMLLabelElement>('label[for="tx-device-id"]')?.control).toBe(device);
+    expect(container.querySelector(".decision-action")).toBeNull();
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(requestsBefore);
+  });
+
+  it("reports the actual synthetic FastAPI JSON liveness as API up", () => {
+    expect(container.querySelector(".health")?.textContent).toBe("API up");
+  });
+
+  it("keeps DST fall-back decision instants distinct in UTC provenance", async () => {
+    backend.decisionTimestamp = "2026-11-01T01:15:00-04:00";
+    await clickSubmit();
+    let timestamp = container.querySelector<HTMLTimeElement>(".kv time");
+    expect(container.textContent).toContain("Decided at (UTC)");
+    expect(timestamp?.dateTime).toBe("2026-11-01T01:15:00-04:00");
+    expect(timestamp?.textContent).toBe("2026-11-01T05:15:00.000Z");
+
+    backend.decisionTimestamp = "2026-11-01T01:15:00-05:00";
+    await clickSubmit();
+    timestamp = container.querySelector<HTMLTimeElement>(".kv time");
+    expect(timestamp?.dateTime).toBe("2026-11-01T01:15:00-05:00");
+    expect(timestamp?.textContent).toBe("2026-11-01T06:15:00.000Z");
+  });
+
   it("success A then failure B: B's failure clears A's decision and surfaces the error", async () => {
     await clickSubmit();
     // Success A rendered in the DOM
@@ -113,7 +168,7 @@ describe("App decision lifecycle", () => {
                 50,
               );
             } else {
-              resolve(jsonResponse(200, { status: "live" }));
+              resolve(jsonResponse(200, { status: "ok" }));
             }
           }),
       ),
@@ -137,4 +192,80 @@ describe("App decision lifecycle", () => {
     expect(container.querySelector(".error")?.textContent).toContain("500");
     expect(button.disabled).toBe(false);
   });
+  it("loading a synthetic preset is local, updates the inputs and clears an earlier recommendation", async () => {
+    await clickSubmit();
+    expect(container.querySelector(".decision-action")).not.toBeNull();
+    const requestsBefore = vi.mocked(fetch).mock.calls.length;
+    const picker = container.querySelector<HTMLSelectElement>("#synthetic-scenario")!;
+    await act(async () => {
+      picker.value = "uc02";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(picker.value).toBe("uc02");
+    expect(container.textContent).toContain("no cross-bank or receiving-bank records");
+    expect(container.querySelector(".risks")?.textContent).toContain("0.98");
+    expect(container.querySelector(".decision-action")).toBeNull();
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(requestsBefore);
+  });
+
+  it("clears a scored preset when switching back to manual without a network request", async () => {
+    const picker = container.querySelector<HTMLSelectElement>("#synthetic-scenario")!;
+    await act(async () => {
+      picker.value = "uc02";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await clickSubmit();
+    expect(container.querySelector(".decision-action")).not.toBeNull();
+    const requestsBefore = vi.mocked(fetch).mock.calls.length;
+
+    await act(async () => {
+      picker.value = "manual";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(picker.value).toBe("manual");
+    // The selected values remain editable, but they no longer carry an old verdict.
+    expect(container.querySelector(".risks")?.textContent).toContain("0.98");
+    expect(container.querySelector(".decision-action")).toBeNull();
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(requestsBefore);
+  });
+
+  it("discards an in-flight success when the transaction is edited before the reply", async () => {
+    const normalFetch = installFetch(backend);
+    let releaseDecision: () => Promise<void> = async () => {
+      throw new Error("Decision request was not issued");
+    };
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).endsWith("/v1/decisions") && init?.method === "POST") {
+        return new Promise<Response>((resolve) => {
+          releaseDecision = async () => {
+            resolve(await normalFetch(input, init));
+          };
+        });
+      }
+      return normalFetch(input, init);
+    }));
+
+    const button = container.querySelector<HTMLButtonElement>("button.submit")!;
+    act(() => {
+      button.click();
+    });
+    expect(container.textContent).toContain("Decision pending");
+
+    // Transaction fields remain editable while a synthetic request is pending.
+    // The eventual success belongs to the old input snapshot, not this form.
+    const beneficiaryType = container.querySelector<HTMLSelectElement>(".row select")!;
+    act(() => {
+      beneficiaryType.value = "wallet";
+      beneficiaryType.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(beneficiaryType.value).toBe("wallet");
+
+    await act(async () => {
+      await releaseDecision();
+    });
+    expect(container.querySelector(".decision-action")).toBeNull();
+    expect(container.querySelector(".error")).toBeNull();
+    expect(button.disabled).toBe(false);
+  });
+
 });
