@@ -160,6 +160,27 @@ describe("App decision lifecycle", () => {
     expect(vi.mocked(fetch).mock.calls).toHaveLength(requestsBefore);
   });
 
+  it("clears a scored preset when switching back to manual without a network request", async () => {
+    const picker = container.querySelector<HTMLSelectElement>("#synthetic-scenario")!;
+    await act(async () => {
+      picker.value = "uc02";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await clickSubmit();
+    expect(container.querySelector(".decision-action")).not.toBeNull();
+    const requestsBefore = vi.mocked(fetch).mock.calls.length;
+
+    await act(async () => {
+      picker.value = "manual";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(picker.value).toBe("manual");
+    // The selected values remain editable, but they no longer carry an old verdict.
+    expect(container.querySelector(".risks")?.textContent).toContain("0.98");
+    expect(container.querySelector(".decision-action")).toBeNull();
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(requestsBefore);
+  });
+
   it("discards an in-flight success when the transaction is edited before the reply", async () => {
     const normalFetch = installFetch(backend);
     let releaseDecision: () => Promise<void> = async () => {

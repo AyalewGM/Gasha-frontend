@@ -113,11 +113,13 @@ export default function App() {
   function selectScenario(id: string) {
     if (submitting) return;
     setScenarioId(id);
+    // Returning to manual inputs also changes the scenario context: clear the
+    // prior recommendation even though the editable values stay in place.
+    clearStaleDecision();
     const scenario = findSyntheticScenario(id);
     if (!scenario) return;
     setTx({ ...scenario.transaction });
     setRisks({ ...scenario.risks });
-    clearStaleDecision();
   }
 
   function setTxField(key: keyof typeof tx) {
