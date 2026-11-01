@@ -51,6 +51,13 @@ describe("synthetic decision HTTP response validation", () => {
     ["timezone-naive DST-fold timestamp", { ...validDecision, decided_at: "2026-11-01T01:15:00" }],
     ["timestamp without ISO separator", { ...validDecision, decided_at: "2026-11-01 01:15:00Z" }],
     ["invalid UTC offset", { ...validDecision, decided_at: "2026-11-01T01:15:00+14:30" }],
+    ["normalized invalid February day", { ...validDecision, decided_at: "2026-02-30T12:00:00Z" }],
+    ["non-leap-year February 29", { ...validDecision, decided_at: "2025-02-29T12:00:00Z" }],
+    ["normalized invalid April day with offset", { ...validDecision, decided_at: "2026-04-31T12:00:00+03:00" }],
+    ["invalid month", { ...validDecision, decided_at: "2026-13-01T12:00:00Z" }],
+    ["invalid zero day", { ...validDecision, decided_at: "2026-01-00T12:00:00Z" }],
+    ["invalid hour", { ...validDecision, decided_at: "2026-11-01T24:00:00Z" }],
+    ["invalid second", { ...validDecision, decided_at: "2026-11-01T01:15:60Z" }],
     ["unexpected model version", { ...validDecision, model_version: 3 }],
     ["wrong top-level shape", [validDecision]],
   ])("fails closed on %s instead of exposing an invalid recommendation", async (_name, payload) => {
@@ -62,6 +69,12 @@ describe("synthetic decision HTTP response validation", () => {
     const withOffset = { ...validDecision, decided_at: "2026-11-01T01:15:00-05:00" };
     stubResponse(withOffset);
     await expect(createDecision(request)).resolves.toEqual(withOffset);
+  });
+
+  it("accepts a valid Gregorian leap-day instant with an explicit UTC offset", async () => {
+    const leapDay = { ...validDecision, decided_at: "2024-02-29T23:59:59+05:30" };
+    stubResponse(leapDay);
+    await expect(createDecision(request)).resolves.toEqual(leapDay);
   });
 
   it("fails closed when an HTTP 200 contains Vite HTML rather than JSON", async () => {
