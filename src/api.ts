@@ -73,7 +73,23 @@ import { apiBasePath } from "./apiRouting";
 
 // Reject timezone-naive timestamps: the 01:00 hour repeats during DST fall-back.
 // The synthetic recommendation must carry an unambiguous absolute instant.
-const AWARE_ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-](?:0\d|1[0-3]):[0-5]\d|[+-]14:00)$/;
+const AWARE_ISO_TIMESTAMP = /^(\\d{4})-(\\d{2})-(\\d{2})T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.\\d+)?(?:Z|[+-](?:0\\d|1[0-3]):[0-5]\\d|[+-]14:00)$/;
+
+/** Date.parse normalizes impossible calendar dates (for example, February 30).
+ * Synthetic provenance must represent a real, unambiguous calendar instant.
+ */
+function isValidAwareTimestamp(value: string): boolean {
+  const match = AWARE_ISO_TIMESTAMP.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+  const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  const maximumDay = daysInMonth[month - 1];
+  return maximumDay !== undefined && day >= 1 && day <= maximumDay &&
+    !Number.isNaN(Date.parse(value));
+}
 
 const SYNTHETIC_DECISION_ACTIONS: ReadonlySet<string> = new Set([
   "allow", "monitor", "challenge", "review", "hold", "block", "no_action_shadow",
@@ -107,8 +123,7 @@ function parseSyntheticDecision(value: unknown): FraudDecision {
     (record.model_version !== undefined &&
       record.model_version !== null &&
       typeof record.model_version !== "string") ||
-    (!AWARE_ISO_TIMESTAMP.test(record.decided_at as string) ||
-      Number.isNaN(Date.parse(record.decided_at as string)))
+    !isValidAwareTimestamp(record.decided_at as string)
   ) {
     throw invalid();
   }
