@@ -15,6 +15,7 @@ function jsonResponse(status: number, body: unknown): Response {
 
 interface FakeBackend {
   nextDecisionStatus: number;
+  decisionTimestamp?: string;
 }
 
 function installFetch(backend: FakeBackend) {
@@ -47,7 +48,7 @@ function installFetch(backend: FakeBackend) {
         configuration_version: body.policy.configuration_version,
         rule_version: body.policy.rule_version,
         model_version: body.policy.model_version ?? null,
-        decided_at: new Date().toISOString(),
+        decided_at: backend.decisionTimestamp ?? new Date().toISOString(),
       });
     }
     return jsonResponse(404, { detail: `unhandled: ${url}` });
@@ -116,6 +117,21 @@ describe("App decision lifecycle", () => {
 
   it("reports the actual synthetic FastAPI JSON liveness as API up", () => {
     expect(container.querySelector(".health")?.textContent).toBe("API up");
+  });
+
+  it("keeps DST fall-back decision instants distinct in UTC provenance", async () => {
+    backend.decisionTimestamp = "2026-11-01T01:15:00-04:00";
+    await clickSubmit();
+    let timestamp = container.querySelector<HTMLTimeElement>(".kv time");
+    expect(container.textContent).toContain("Decided at (UTC)");
+    expect(timestamp?.dateTime).toBe("2026-11-01T01:15:00-04:00");
+    expect(timestamp?.textContent).toBe("2026-11-01T05:15:00.000Z");
+
+    backend.decisionTimestamp = "2026-11-01T01:15:00-05:00";
+    await clickSubmit();
+    timestamp = container.querySelector<HTMLTimeElement>(".kv time");
+    expect(timestamp?.dateTime).toBe("2026-11-01T01:15:00-05:00");
+    expect(timestamp?.textContent).toBe("2026-11-01T06:15:00.000Z");
   });
 
   it("success A then failure B: B's failure clears A's decision and surfaces the error", async () => {
