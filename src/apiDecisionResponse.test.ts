@@ -48,11 +48,20 @@ describe("synthetic decision HTTP response validation", () => {
     ["malformed reason codes", { ...validDecision, reason_codes: ["OK", 7] }],
     ["missing provenance", { ...validDecision, policy_version: null }],
     ["invalid timestamp", { ...validDecision, decided_at: "not-a-timestamp" }],
+    ["timezone-naive DST-fold timestamp", { ...validDecision, decided_at: "2026-11-01T01:15:00" }],
+    ["timestamp without ISO separator", { ...validDecision, decided_at: "2026-11-01 01:15:00Z" }],
+    ["invalid UTC offset", { ...validDecision, decided_at: "2026-11-01T01:15:00+14:30" }],
     ["unexpected model version", { ...validDecision, model_version: 3 }],
     ["wrong top-level shape", [validDecision]],
   ])("fails closed on %s instead of exposing an invalid recommendation", async (_name, payload) => {
     stubResponse(payload);
     await expect(createDecision(request)).rejects.toThrow("Invalid synthetic decision response");
+  });
+
+  it("accepts explicitly offset-aware synthetic provenance across DST fall-back", async () => {
+    const withOffset = { ...validDecision, decided_at: "2026-11-01T01:15:00-05:00" };
+    stubResponse(withOffset);
+    await expect(createDecision(request)).resolves.toEqual(withOffset);
   });
 
   it("fails closed when an HTTP 200 contains Vite HTML rather than JSON", async () => {
