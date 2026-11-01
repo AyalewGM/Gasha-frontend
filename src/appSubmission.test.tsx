@@ -21,7 +21,7 @@ function installFetch(backend: FakeBackend) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/health/live")) {
-      return jsonResponse(200, { status: "live" });
+      return jsonResponse(200, { status: "ok" });
     }
     if (url.endsWith("/v1/decisions") && init?.method === "POST") {
       const body = JSON.parse(String(init.body)) as {
@@ -86,6 +86,10 @@ describe("App decision lifecycle", () => {
     });
   }
 
+  it("reports the actual synthetic FastAPI JSON liveness as API up", () => {
+    expect(container.querySelector(".health")?.textContent).toBe("API up");
+  });
+
   it("success A then failure B: B's failure clears A's decision and surfaces the error", async () => {
     await clickSubmit();
     // Success A rendered in the DOM
@@ -120,7 +124,7 @@ describe("App decision lifecycle", () => {
                 50,
               );
             } else {
-              resolve(jsonResponse(200, { status: "live" }));
+              resolve(jsonResponse(200, { status: "ok" }));
             }
           }),
       ),
