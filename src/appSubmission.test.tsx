@@ -86,6 +86,20 @@ describe("App decision lifecycle", () => {
     });
   }
 
+  it("associates each transaction field label with its editable control", () => {
+    const labels = Array.from(container.querySelectorAll<HTMLLabelElement>(".row .field > label"));
+    expect(labels).toHaveLength(10);
+    const ids = new Set<string>();
+    for (const label of labels) {
+      const control = label.parentElement?.querySelector("input, select");
+      expect(control).not.toBeNull();
+      expect(label.htmlFor).toBe(control?.id);
+      expect(label.control).toBe(control);
+      ids.add(label.htmlFor);
+    }
+    expect(ids.size).toBe(labels.length);
+  });
+
   it("reports the actual synthetic FastAPI JSON liveness as API up", () => {
     expect(container.querySelector(".health")?.textContent).toBe("API up");
   });
