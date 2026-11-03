@@ -29,7 +29,7 @@ export interface CaseHistoryProjection {
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const HASH = /^[0-9a-f]{64}$/;
-const AWARE_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.(\d+))?(?:Z|[+-](?:0\d|1[0-3]):[0-5]\d|[+-]14:00)$/;
+const AWARE_TIMESTAMP = /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.(\d{1,6}))?(?:Z|[+-](?:0\d|1[0-3]):[0-5]\d|[+-]14:00)$/;
 const OPERATIONS: ReadonlySet<string> = new Set(["create", "triage", "assign", "dispose", "correct", "reconcile"]);
 const DISPOSITIONS: ReadonlySet<string> = new Set(["confirmed_fraud", "confirmed_legitimate", "unresolved"]);
 const REASONS: Record<CaseOperation, ReadonlySet<string>> = {
@@ -94,7 +94,7 @@ function validInstant(value: unknown): value is string {
  */
 function instantMicroseconds(value: string): bigint {
   const fraction = AWARE_TIMESTAMP.exec(value)?.[4] ?? "";
-  const remainder = fraction.slice(0, 6).padEnd(6, "0").slice(3);
+  const remainder = fraction.padEnd(6, "0").slice(3);
   return BigInt(Date.parse(value)) * 1000n + BigInt(remainder || "0");
 }
 

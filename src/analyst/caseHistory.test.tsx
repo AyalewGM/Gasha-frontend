@@ -122,6 +122,40 @@ describe("inert protected case history projection, backend #45 v0.1", () => {
     expect(parseProtectedCaseHistory(value, CASE_ID).events).toHaveLength(6);
   });
 
+
+  it.each([
+    ["no fraction", "2026-11-01T12:00:00Z"],
+    ["one fractional digit", "2026-11-01T12:00:00.1Z"],
+    ["two fractional digits", "2026-11-01T12:00:00.12Z"],
+    ["three fractional digits", "2026-11-01T12:00:00.123Z"],
+    ["four fractional digits", "2026-11-01T12:00:00.1234Z"],
+    ["five fractional digits", "2026-11-01T12:00:00.12345Z"],
+    ["six fractional digits and offset", "2026-11-01T07:00:00.123456-05:00"],
+  ])("accepts supported timestamp precision: %s", (_name, timestamp) => {
+    const value = fixture();
+    value.events[0].recorded_at = timestamp;
+    expect(parseProtectedCaseHistory(value, CASE_ID).events).toHaveLength(6);
+  });
+
+  it.each([
+    ["seven fractional digits in UTC", "2026-11-01T12:00:00.0000001Z"],
+    ["nine fractional digits with negative offset", "2026-11-01T07:00:00.123456789-05:00"],
+    ["seven fractional digits with positive offset", "2026-11-01T17:30:00.1234567+05:30"],
+  ])("rejects off-contract submicrosecond timestamps: %s", (_name, timestamp) => {
+    const value = fixture();
+    value.events[0].recorded_at = timestamp;
+    expect(() => parseProtectedCaseHistory(value, CASE_ID))
+      .toThrow("Invalid protected case-history projection");
+  });
+
+  it("rejects reversed seven-digit instants across UTC offsets rather than truncating", () => {
+    const value = fixture();
+    value.events[0].recorded_at = "2026-11-01T12:00:00.0000009Z";
+    value.events[1].recorded_at = "2026-11-01T07:00:00.0000001-05:00";
+    expect(() => parseProtectedCaseHistory(value, CASE_ID))
+      .toThrow("Invalid protected case-history projection");
+  });
+
   it("orders DST-fold instants by absolute UTC rather than repeated local clock", () => {
     const value = fixture();
     value.events[0].recorded_at = "2026-11-01T01:30:00-04:00";
