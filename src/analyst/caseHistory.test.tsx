@@ -103,6 +103,25 @@ describe("inert protected case history projection, backend #45 v0.1", () => {
       .toThrow("Invalid protected case-history projection");
   });
 
+
+  it("rejects reversed microsecond events within the same JavaScript millisecond", () => {
+    const value = fixture();
+    // Date.parse returns the same millisecond for these two instants.
+    value.events[0].recorded_at = "2026-11-01T07:00:00.000900-05:00";
+    value.events[1].recorded_at = "2026-11-01T12:00:00.000100Z";
+    expect(Date.parse(value.events[0].recorded_at))
+      .toBe(Date.parse(value.events[1].recorded_at));
+    expect(() => parseProtectedCaseHistory(value, CASE_ID))
+      .toThrow("Invalid protected case-history projection");
+  });
+
+  it("accepts increasing microsecond instants within one millisecond", () => {
+    const value = fixture();
+    value.events[0].recorded_at = "2026-11-01T12:00:00.000100Z";
+    value.events[1].recorded_at = "2026-11-01T07:00:00.000900-05:00";
+    expect(parseProtectedCaseHistory(value, CASE_ID).events).toHaveLength(6);
+  });
+
   it("orders DST-fold instants by absolute UTC rather than repeated local clock", () => {
     const value = fixture();
     value.events[0].recorded_at = "2026-11-01T01:30:00-04:00";
