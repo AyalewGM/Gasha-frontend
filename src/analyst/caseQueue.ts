@@ -38,7 +38,7 @@ export interface CaseQueueProjection {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 const DIGEST = /^[0-9a-f]{64}$/;
 const VERSION = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/;
-const AWARE = /^(\\d{4})-(\\d{2})-(\\d{2})T(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d(?:\\.(\\d{1,6}))?(?:Z|[+-](?:0\\d|1[0-3]):[0-5]\\d|[+-]14:00)$/;
+const AWARE = /^(\d{4})-(\d{2})-(\d{2})T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.(\d{1,6}))?(?:Z|[+-](?:0\d|1[0-3]):[0-5]\d|[+-]14:00)$/;
 const TOP_KEYS = [
   "tenant_scope", "ranking_policy_version", "generated_at", "items",
   "bank_ranking_approved", "enforcement_activated",
