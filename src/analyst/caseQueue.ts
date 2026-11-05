@@ -97,17 +97,17 @@ function micros(value: string): bigint {
  * be checked by the installed backend reader on every request.
  */
 export function parseProtectedCaseQueue(value: unknown, expectedLimit: number): CaseQueueProjection {
-  if (
-    !Number.isInteger(expectedLimit) || expectedLimit < 1 || expectedLimit > 100 ||
-    !record(value) || !exactKeys(value, TOP_KEYS) ||
-    value.tenant_scope !== "authenticated_reader" ||
-    typeof value.ranking_policy_version !== "string" ||
-    !VERSION.test(value.ranking_policy_version) ||
-    !validInstant(value.generated_at) ||
-    value.bank_ranking_approved !== false ||
-    value.enforcement_activated !== false ||
-    !Array.isArray(value.items) || value.items.length > expectedLimit
-  ) invalid();
+  // Keep the checks separate so negative tests identify the failed invariant.
+  // Every rejection still returns the same redacted public message.
+  if (!Number.isInteger(expectedLimit) || expectedLimit < 1 || expectedLimit > 100) invalid();
+  if (!record(value)) invalid();
+  if (!exactKeys(value, TOP_KEYS)) invalid();
+  if (value.tenant_scope !== "authenticated_reader") invalid();
+  if (typeof value.ranking_policy_version !== "string" ||
+      !VERSION.test(value.ranking_policy_version)) invalid();
+  if (!validInstant(value.generated_at)) invalid();
+  if (value.bank_ranking_approved !== false || value.enforcement_activated !== false) invalid();
+  if (!Array.isArray(value.items) || value.items.length > expectedLimit) invalid();
 
   const generatedAt = micros(value.generated_at as string);
   const caseIds = new Set<string>();
