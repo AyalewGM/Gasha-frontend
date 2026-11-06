@@ -28,9 +28,9 @@ export function CaseQueuePanel({ queue }: { readonly queue: CaseQueueProjection 
         <dt>Snapshot time (offset-aware)</dt>
         <dd><time dateTime={queue.generated_at}>{queue.generated_at}</time></dd>
         <dt>Bank ranking approved</dt>
-        <dd>{queue.bank_ranking_approved ? "yes" : "no"}</dd>
+        <dd>no</dd>
         <dt>Payment enforcement activated</dt>
-        <dd>{queue.enforcement_activated ? "yes" : "no"}</dd>
+        <dd>no</dd>
       </dl>
       {queue.items.length === 0 ? (
         <p role="status">No open cases in this read-only projection.</p>
