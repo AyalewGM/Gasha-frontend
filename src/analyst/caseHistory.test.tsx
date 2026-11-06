@@ -46,7 +46,7 @@ describe("inert protected case history projection, backend #45 v0.1", () => {
     expect(Object.isFrozen(result.events[0])).toBe(true);
   });
 
-  it("renders a read-only, pseudonymous, UTC case timeline with unknown execution", () => {
+  it("renders a read-only, pseudonymous, offset-aware case timeline with unknown execution", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     try {
       const parsed = parseProtectedCaseHistory(fixture(), CASE_ID);
@@ -57,7 +57,8 @@ describe("inert protected case history projection, backend #45 v0.1", () => {
       expect(html).toContain("confirmed_legitimate");
       expect(html).toContain("Bank execution");
       expect(html).toContain("unknown");
-      expect(html).toContain("2026-11-01T12:05:00.000Z");
+      expect(html).toContain("2026-11-01T12:05:00+00:00");
+      expect(html).toContain("Recorded (source offset; full precision)");
       expect(html).not.toContain(ACTOR);
       expect(html).not.toContain("Authorization");
       expect(html).not.toContain("<button");
@@ -65,6 +66,17 @@ describe("inert protected case history projection, backend #45 v0.1", () => {
     } finally {
       fetchSpy.mockRestore();
     }
+  });
+
+  it("preserves submillisecond event order and original source offsets in the read-only view", () => {
+    const value = fixture();
+    value.events[0].recorded_at = "2026-11-01T12:00:00.000100Z";
+    value.events[1].recorded_at = "2026-11-01T07:00:00.000900-05:00";
+    const parsed = parseProtectedCaseHistory(value, CASE_ID);
+    const html = renderToStaticMarkup(createElement(CaseHistoryPanel, { history: parsed }));
+    expect(html).toContain(">2026-11-01T12:00:00.000100Z</time>");
+    expect(html).toContain(">2026-11-01T07:00:00.000900-05:00</time>");
+    expect(html).not.toContain(">2026-11-01T12:00:00.000Z</time>");
   });
 
   it("rejects a different requested case rather than displaying cross-case data", () => {
@@ -162,7 +174,7 @@ describe("inert protected case history projection, backend #45 v0.1", () => {
     value.events[1].recorded_at = "2026-11-01T01:15:00-05:00";
     const result = parseProtectedCaseHistory(value, CASE_ID);
     const html = renderToStaticMarkup(createElement(CaseHistoryPanel, { history: result }));
-    expect(html).toContain("2026-11-01T05:30:00.000Z");
-    expect(html).toContain("2026-11-01T06:15:00.000Z");
+    expect(html).toContain(">2026-11-01T01:30:00-04:00</time>");
+    expect(html).toContain(">2026-11-01T01:15:00-05:00</time>");
   });
 });

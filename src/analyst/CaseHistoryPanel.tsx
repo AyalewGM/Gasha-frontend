@@ -12,17 +12,16 @@ export function CaseHistoryPanel({ history }: { history: CaseHistoryProjection }
         This history is not proof of a Bank-executed intervention, settlement,
         prevented loss, or payment enforcement.
       </p>
+      <p>Recorded times retain their original timezone offsets and up to six fractional digits.</p>
       <p>Case reference: <code>{history.case_id}</code></p>
       <ol aria-label="Case events">
         {history.events.map((event) => (
           <li key={event.revision}>
             <h3>Revision {event.revision}: {event.operation}</h3>
             <dl>
-              <dt>Recorded (UTC)</dt>
+              <dt>Recorded (source offset; full precision)</dt>
               <dd>
-                <time dateTime={event.recorded_at}>
-                  {new Date(event.recorded_at).toISOString()}
-                </time>
+                <time dateTime={event.recorded_at}>{event.recorded_at}</time>
               </dd>
               <dt>Reason</dt>
               <dd>{event.reason_code}</dd>
