@@ -19,6 +19,20 @@ export interface ProtectedCaseReadPort {
 
 const LIMIT = 25;
 
+// A key per read-port object forces a fresh, empty subtree before a different
+// reader/session can render. WeakMap avoids retaining old reader credentials or
+// ports; returning to an earlier object still remounts because its old subtree
+// was unmounted on the intervening switch.
+const readerViewKeys = new WeakMap<ProtectedCaseReadPort, number>();
+let nextReaderViewKey = 0;
+function readerViewKey(reader: ProtectedCaseReadPort): number {
+  const previous = readerViewKeys.get(reader);
+  if (previous !== undefined) return previous;
+  const created = ++nextReaderViewKey;
+  readerViewKeys.set(reader, created);
+  return created;
+}
+
 function redactedFailure(error: unknown): string {
   // Never display backend bodies, exception messages, tokens, or identifiers.
   const status = typeof error === "object" && error !== null &&
@@ -32,7 +46,7 @@ function redactedFailure(error: unknown): string {
   }
 }
 
-export function ReadOnlyAnalystJourney({ reader }: { readonly reader: ProtectedCaseReadPort }) {
+function ReaderScopedJourney({ reader }: { readonly reader: ProtectedCaseReadPort }) {
   const revision = useRef(0);
   const [queue, setQueue] = useState<CaseQueueProjection | null>(null);
   const [selectedId, setSelectedId] = useState("");
@@ -55,8 +69,9 @@ export function ReadOnlyAnalystJourney({ reader }: { readonly reader: ProtectedC
     setError(null);
     setPending("queue");
     try {
-      const candidate = parseProtectedCaseQueue(await reader.readQueue(LIMIT), LIMIT);
+      const response = await reader.readQueue(LIMIT);
       if (request !== revision.current) return;
+      const candidate = parseProtectedCaseQueue(response, LIMIT);
       setQueue(candidate);
       setSelectedId(candidate.items[0]?.case_id ?? "");
     } catch (reason: unknown) {
@@ -84,8 +99,8 @@ export function ReadOnlyAnalystJourney({ reader }: { readonly reader: ProtectedC
     setPending("history");
     try {
       const historyResponse = await reader.readHistory(selectedId);
-      const candidate = parseLinkedCaseHistory(queue, historyResponse, selectedId, LIMIT);
       if (request !== revision.current) return;
+      const candidate = parseLinkedCaseHistory(queue, historyResponse, selectedId, LIMIT);
       setLinked(candidate);
     } catch (reason: unknown) {
       if (request !== revision.current) return;
@@ -135,4 +150,13 @@ export function ReadOnlyAnalystJourney({ reader }: { readonly reader: ProtectedC
       {linked && <CaseHistoryPanel history={linked.history} />}
     </section>
   );
+}
+
+// A mounted reader identity change is a hard data boundary: React discards the
+// old state (queue, selection, history, pending, error) before committing the
+// next reader's empty view. Unmount cleanup above invalidates late A results.
+// Real Bank session/tenant refresh without changing port identity remains a
+// separate contract to be verified before any authenticated mount.
+export function ReadOnlyAnalystJourney({ reader }: { readonly reader: ProtectedCaseReadPort }) {
+  return <ReaderScopedJourney key={readerViewKey(reader)} reader={reader} />;
 }
