@@ -157,6 +157,16 @@ function ReaderScopedJourney({ reader }: { readonly reader: ProtectedCaseReadPor
 // next reader's empty view. Unmount cleanup above invalidates late A results.
 // Real Bank session/tenant refresh without changing port identity remains a
 // separate contract to be verified before any authenticated mount.
-export function ReadOnlyAnalystJourney({ reader }: { readonly reader: ProtectedCaseReadPort }) {
-  return <ReaderScopedJourney key={readerViewKey(reader)} reader={reader} />;
+export function ReadOnlyAnalystJourney({
+  reader,
+  sessionEpoch,
+}: {
+  readonly reader: ProtectedCaseReadPort;
+  /** Rotated by the installed session adapter on every tenant/credential change. */
+  readonly sessionEpoch?: string;
+}) {
+  // The same read-port object can be rebound by a trusted adapter after
+  // credential rotation. Its cached React subtree must never survive that
+  // boundary, even when reader identity stays constant.
+  return <ReaderScopedJourney key={`${readerViewKey(reader)}:${sessionEpoch ?? "inert"}`} reader={reader} />;
 }
