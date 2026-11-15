@@ -1,4 +1,5 @@
 import type { ProtectedCaseReadPort } from "./ReadOnlyAnalystJourney";
+import { isCaseIdentifier, protectedCasesPath } from "./protectedCasePath";
 
 /**
  * Future installed composition supplies a same-origin GET transport bound to
@@ -9,9 +10,6 @@ export type BoundCaseGet = (relativePath: string) => Promise<{
   readonly status: number;
   readonly payload?: unknown;
 }>;
-
-const TENANT_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,79}$/;
-const CASE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
 
 class ProtectedCaseReadFailure extends Error {
   readonly status: number | null;
@@ -31,11 +29,8 @@ export function createProtectedCaseReadPort(
   tenant: string,
   get: BoundCaseGet,
 ): ProtectedCaseReadPort {
-  if (typeof tenant !== "string" || tenant !== tenant.trim() ||
-    !TENANT_SEGMENT.test(tenant) || typeof get !== "function") {
-    throw new ProtectedCaseReadFailure();
-  }
-  const base = `/v1/tenants/${tenant}/cases`;
+  const base = protectedCasesPath(tenant);
+  if (base === null || typeof get !== "function") throw new ProtectedCaseReadFailure();
   let sessionUnavailable = false;
 
   async function read(path: string): Promise<unknown> {
@@ -68,7 +63,7 @@ export function createProtectedCaseReadPort(
       return read(`${base}/queue?limit=${limit}`);
     },
     async readHistory(caseId: string) {
-      if (typeof caseId !== "string" || caseId !== caseId.trim() || !CASE_ID.test(caseId)) {
+      if (!isCaseIdentifier(caseId)) {
         throw new ProtectedCaseReadFailure();
       }
       return read(`${base}/${caseId}/history`);

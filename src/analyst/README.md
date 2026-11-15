@@ -34,3 +34,16 @@ Do not wire this into the loopback gasha.api.synthetic:app console.
 
 All example identifiers in tests are fictitious. No Bank data/PII,
 deployment, case mutation, stage authority or payment enforcement is used.
+
+`createProtectedCaseTransitionPort` prepares existing-case triage,
+assignment, disposition, correction and feedback reconciliation from
+validated history. The server owns all access and assignee decisions. The
+adapter derives the expected revision and source event, requires a
+command-specific idempotency key, and accepts only a receipt matching the
+submitted proposal. A conflict requires fresh history. A missing or malformed
+receipt leaves the outcome uncertain and requires history reconciliation
+before any retry. The adapter never retries a POST automatically.
+
+The POST transport is injected and tested with synthetic responses. A future
+installation must also approve its CSRF and session controls and invalidate
+both read and transition ports together when the session changes.
