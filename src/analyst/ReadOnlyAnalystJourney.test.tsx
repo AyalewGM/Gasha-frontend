@@ -240,4 +240,30 @@ describe("Issue #45 default-inactive synthetic protected-read journey", () => {
     expect(host.querySelector("#analyst-case-selection")).toBeNull();
   });
 
+  it("flushes history and late reads when the same port rotates trusted session epoch", async () => {
+    const reader = port();
+    await act(async () => {
+      root.render(createElement(ReadOnlyAnalystJourney, { reader, sessionEpoch: "credential-epoch-a" }));
+    });
+    await act(async () => click(host, "Refresh authorized"));
+    await act(async () => click(host, "Inspect immutable"));
+    expect(host.textContent).toContain(CASE_ID);
+    expect(host.textContent).toContain("Revision 1: create");
+
+    // A trusted reader may retain object identity across a credential change.
+    // The new epoch must discard every part of the old analyst view.
+    const oldQueue = deferred<unknown>();
+    vi.mocked(reader.readQueue).mockReturnValueOnce(oldQueue.promise);
+    await act(async () => click(host, "Refresh authorized"));
+    await act(async () => {
+      root.render(createElement(ReadOnlyAnalystJourney, { reader, sessionEpoch: "credential-epoch-b" }));
+    });
+    expect(host.textContent).not.toContain(CASE_ID);
+    expect(host.textContent).not.toContain("Revision 1: create");
+    expect(host.querySelector("#analyst-case-selection")).toBeNull();
+    await act(async () => { oldQueue.resolve(queueFixture()); });
+    expect(host.textContent).not.toContain(CASE_ID);
+    expect(host.querySelector("#analyst-case-selection")).toBeNull();
+  });
+
 });
