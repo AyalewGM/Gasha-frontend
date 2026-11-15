@@ -5,11 +5,18 @@ display-only** React case-history panel based on the backend document
 docs/protected-case-history-issue45.md at main
 dd99db55cedaaf7de3f8ba83847e0cd2434c894f.
 
-It is **not** an authenticated analyst application, protected API client,
-case editor, bank-ready frontend, tenant authority, IdP integration, or
-evidence of executed payment intervention. There are no fetch calls,
-credentials, added proxy routes, browser storage, mutation controls or
-imports from the existing synthetic-only src/App.tsx.
+The display components and the read adapter remain unmounted. The package
+contains no browser fetch calls, credentials, proxy routes, browser storage,
+mutation controls or imports from the synthetic-only src/App.tsx.
+
+`createProtectedCaseReadPort` adapts a supplied session-bound GET function to
+the journey's queue and history operations. It fixes the relative paths to
+one tenant, validates route selectors, redacts denied responses, and retires
+the port on HTTP 401. Only a separately reviewed composition may supply the
+verified tenant and transport. That composition must manage credentials,
+redirects, caching and session invalidation, and replace the port when the
+session or tenant changes. The supplied transport must return HTTP responses
+as status results so a 401 can invalidate pending reads.
 
 The decoder rejects cross-case response substitution, unrecognized fields
 (including PII), non-opaque actor/context references, noncontiguous revision,
