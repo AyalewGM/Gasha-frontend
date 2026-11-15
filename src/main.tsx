@@ -30,8 +30,7 @@ if (route === "analyst") {
   void import("./App")
     .then(({ default: App }) => mount(<App />))
     .catch(() => mount(<main role="alert">Synthetic console unavailable.</main>));
-}
- else {
+} else {
   // Unknown or encoded/alternate paths must not load the synthetic console.
   mount(<main role="status">Gasha route unavailable.</main>);
 }
