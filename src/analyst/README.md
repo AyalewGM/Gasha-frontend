@@ -1,29 +1,38 @@
-# Issue #45 — inert read-only analyst case-history projection
+# Protected analyst workspace
 
-This directory provides a strict TypeScript decoder and an **unmounted,
-display-only** React case-history panel based on the backend document
-docs/protected-case-history-issue45.md at main
-dd99db55cedaaf7de3f8ba83847e0cd2434c894f.
+`/analyst` is disabled by default. The optional route shell requires an
+installed session adapter and shows an unavailable state if none is present.
+Its session epoch resets case state when credentials, tenant, or permissions
+change. The protected API authorizes every read and transition.
 
-It is **not** an authenticated analyst application, protected API client,
-case editor, bank-ready frontend, tenant authority, IdP integration, or
-evidence of executed payment intervention. There are no fetch calls,
-credentials, added proxy routes, browser storage, mutation controls or
-imports from the existing synthetic-only src/App.tsx.
+## Synthetic browser lab
 
-The decoder rejects cross-case response substitution, unrecognized fields
-(including PII), non-opaque actor/context references, noncontiguous revision,
-invalid lifecycle, impossible/naive/out-of-order clocks, non-unknown Bank
-execution, and any purported enforcement activation. These checks protect
-rendering only: the server must independently authorize case.read, tenant,
-credential expiry/revocation, audit and trusted durable reader on each read.
+Use a loopback protected backend with an isolated synthetic database and test
+identity verifier. The existing synthetic decision API does not serve this
+workflow.
 
-**Next gated dependency:** Security/Architecture must accept a Bank-approved
-session/ingress/CSRF model and the backend's installed tenant-scoped reader
-before a separately reviewed, authenticated client fetches or mounts this
-panel. Independent QA must then exercise 401/403/cross-tenant 404, expired
-and revoked credentials, audit/storage outages and denial without mutation.
-Do not wire this into the loopback gasha.api.synthetic:app console.
+```sh
+VITE_GASHA_ANALYST_PHASE_A=true VITE_GASHA_ANALYST_SYNTHETIC_LAB=true \
+  GASHA_LOCAL_API_TARGET=http://127.0.0.1:8000 npm run dev -- --host 127.0.0.1
+```
 
-All example identifiers in tests are fictitious. No Bank data/PII,
-deployment, case mutation, stage authority or payment enforcement is used.
+Open `http://127.0.0.1:5173/analyst` and use the bearer credential supplied
+by the test fixture. The lab is scoped to the fixture's `tenant-a`. Use the
+fixture's synthetic assignee reference when assigning a case. The generic
+decision-console proxy is disabled in lab mode. The lab proxy accepts only
+loopback requests on the queue, history, and five supported transition paths.
+Writes require same-origin JSON with a bearer credential, and the transport
+omits cookies, bypasses cache and rejects redirects. Credentials stay in memory.
+Ending a session or receiving a 401 clears case data and retires both ports.
+
+The queue and history are decoded before use. Existing-case transitions
+derive the source and expected revision from history, use a new event key for
+each operator action, and verify the server receipt. The UI refreshes history
+after a write. Conflicts require a fresh history. After an uncertain write, case actions
+stay paused until authenticated history shows a newer revision. The client does not automatically replay a
+POST.
+
+The browser lab runs only on an explicitly enabled Vite development server.
+Production builds and Vite Preview cannot install the lab. A Bank installation
+requires separate Security/Architecture and QA acceptance of identity,
+ingress, CSRF, authorization, audit and the durable readers and writer.
