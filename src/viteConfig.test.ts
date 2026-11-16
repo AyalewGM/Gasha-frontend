@@ -1,5 +1,5 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { loadConfigFromFile } from "vite";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { loadConfigFromFile, type Plugin, type ViteDevServer } from "vite";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -27,7 +27,7 @@ describe("dev and preview API proxy configuration", () => {
     expect(loaded).not.toBeNull();
     const config = loaded!.config;
     for (const proxy of [config.server?.proxy, config.preview?.proxy]) {
-      const entry = proxy?.[prefix];
+      const entry = proxy?.[`^${prefix}/(?:health/live|v1/decisions)$`];
       expect(entry).toBeDefined();
       expect(typeof entry).toBe("object");
       if (typeof entry === "object") {
@@ -37,6 +37,55 @@ describe("dev and preview API proxy configuration", () => {
         expect(entry.rewrite?.("/unrelated")).toBe("/unrelated");
       }
     }
+  });
+
+  it("uses only the scoped dev proxy when the analyst lab is enabled", async () => {
+    temp = mkdtempSync(join(tmpdir(), "gasha-analyst-lab-"));
+    writeFileSync(join(temp, ".env.gasha_test"),
+      "VITE_GASHA_ANALYST_PHASE_A=true\nVITE_GASHA_ANALYST_SYNTHETIC_LAB=true\n");
+    process.chdir(temp);
+    const configPath = resolve(originalCwd, "vite.config.ts");
+    const loaded = await loadConfigFromFile({ command: "serve", mode: "gasha_test" }, configPath);
+    const config = loaded!.config;
+    expect(Object.keys(config.server?.proxy ?? {})).toEqual(["/__gasha_analyst_lab"]);
+    expect(config.preview?.proxy).toEqual({});
+    const plugin = (config.plugins as Plugin[]).find((item) => item.name === "synthetic-analyst-loopback-boundary");
+    expect(plugin).toBeDefined();
+    const use = vi.fn();
+    const configure = plugin!.configureServer;
+    if (typeof configure !== "function") throw new Error("Missing analyst lab boundary");
+    configure.call({} as ThisParameterType<typeof configure>, { middlewares: { use } } as unknown as ViteDevServer);
+    const handle = use.mock.calls[0][0];
+
+    for (const path of [
+      "/api/v1/tenants/tenant-a/cases/queue?limit=25",
+      "/api/%76%31/tenants/tenant-a/cases/queue?limit=25",
+      "/api/v1/%74enants/tenant-a/cases/queue?limit=25",
+      "/__gasha_analyst_lab/v1/%74enants/tenant-a/cases/queue?limit=25",
+    ]) {
+      const end = vi.fn();
+      const writeHead = vi.fn().mockReturnValue({ end });
+      const next = vi.fn();
+      handle({ url: path, method: "GET", headers: {
+        host: "127.0.0.1:5173", authorization: "Bearer synthetic-test",
+      }, socket: { remoteAddress: "127.0.0.1" } }, { writeHead }, next);
+      if (next.mock.calls.length) {
+        // An encoded generic prefix may reach Vite fallback, but no proxy
+        // entry forwards it to the protected backend.
+        expect(Object.keys(config.server?.proxy ?? {}).some((prefix) => path.startsWith(prefix))).toBe(false);
+      } else {
+        expect(writeHead).toHaveBeenCalledWith(403, { "Cache-Control": "no-store" });
+      }
+    }
+
+    const preview = await loadConfigFromFile(
+      { command: "serve", mode: "gasha_test", isPreview: true }, configPath,
+    );
+    expect(preview!.config.preview?.proxy).toEqual({});
+    const build = await loadConfigFromFile({ command: "build", mode: "gasha_test" }, configPath);
+    expect(config.define?.__GASHA_SYNTHETIC_ANALYST_LAB__).toBe("true");
+    expect(preview!.config.define?.__GASHA_SYNTHETIC_ANALYST_LAB__).toBe("false");
+    expect(build!.config.define?.__GASHA_SYNTHETIC_ANALYST_LAB__).toBe("false");
   });
 
   it.each([
@@ -53,7 +102,7 @@ describe("dev and preview API proxy configuration", () => {
     );
     expect(loaded).not.toBeNull();
     for (const proxy of [loaded!.config.server?.proxy, loaded!.config.preview?.proxy]) {
-      const entry = proxy?.["/api"];
+      const entry = proxy?.["^/api/(?:health/live|v1/decisions)$"];
       expect(entry).toBeDefined();
       if (typeof entry === "object") expect(entry.target).toBe(backendTarget);
     }
