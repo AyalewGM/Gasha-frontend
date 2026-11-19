@@ -1,6 +1,6 @@
 import { StrictMode, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
-import { classifyGashaRoute } from "./analyst/routeBoundary";
+import { classifyGashaBrowserRoute, isLoopbackBrowserHost } from "./analyst/routeBoundary";
 import "./index.css";
 
 const root = createRoot(document.getElementById("root")!);
@@ -14,11 +14,11 @@ function mount(view: ReactNode) {
  * protected route. This build-time installation gate defaults to OFF.
  * URL path is only navigation, never tenant/credential/capability authority.
  */
-const route = classifyGashaRoute(window.location.pathname);
+const route = classifyGashaBrowserRoute(window.location.pathname, window.location.hostname);
 if (route === "analyst") {
   if (
     __GASHA_SYNTHETIC_ANALYST_LAB__ &&
-    ["127.0.0.1", "localhost", "[::1]"].includes(window.location.hostname)
+    isLoopbackBrowserHost(window.location.hostname)
   ) {
     void import("./analyst/SyntheticAnalystLab")
       .then(({ SyntheticAnalystLab }) => mount(<SyntheticAnalystLab />))
