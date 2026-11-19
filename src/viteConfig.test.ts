@@ -131,4 +131,79 @@ describe("dev and preview API proxy configuration", () => {
     ).rejects.toThrow();
   });
 
+
+  it("rejects remote/ambiguous peers and hosts at the synthetic decision proxy in dev and preview", async () => {
+    temp = mkdtempSync(join(tmpdir(), "gasha-local-boundary-"));
+    process.chdir(temp);
+    const loaded = await loadConfigFromFile(
+      { command: "serve", mode: "gasha_test" },
+      resolve(originalCwd, "vite.config.ts"),
+    );
+    const plugin = (loaded!.config.plugins as Plugin[]).find(
+      (item) => item.name === "synthetic-decision-proxy-boundary",
+    );
+    expect(plugin).toBeDefined();
+
+    for (const hookName of ["configureServer", "configurePreviewServer"] as const) {
+      const configure = plugin![hookName];
+      if (typeof configure !== "function") throw new Error("Missing synthetic proxy boundary");
+      const use = vi.fn();
+      configure.call(
+        {} as ThisParameterType<typeof configure>,
+        { middlewares: { use } } as unknown as ViteDevServer,
+      );
+      const handle = use.mock.calls[0][0];
+      expect(typeof handle).toBe("function");
+
+      const peers = [
+        ["127.0.0.1:5173", "127.0.0.1", true],
+        ["localhost:4173", "::1", true],
+        ["[::1]:5173", "::ffff:127.0.0.1", true],
+        ["bank.example", "127.0.0.1", false],
+        ["localhost.bank.example", "127.0.0.1", false],
+        ["192.168.1.4:5173", "127.0.0.1", false],
+        ["127.0.0.1:5173", "192.0.2.15", false],
+        ["localhost:5173", "::ffff:192.0.2.15", false],
+        ["", "127.0.0.1", false],
+        ["127.0.0.1:5173", "", false],
+      ] as const;
+
+      for (const [host, remoteAddress, allowed] of peers) {
+        for (const [url, method] of [
+          ["/api/v1/decisions", "POST"],
+          ["/api/health/live", "GET"],
+        ] as const) {
+          const headers: Record<string, string> = {
+            host, authorization: "Bearer must-not-forward", cookie: "bank-session=must-not-forward",
+          };
+          const next = vi.fn();
+          const end = vi.fn();
+          const writeHead = vi.fn().mockReturnValue({ end });
+          handle({ url, method, headers, socket: { remoteAddress } }, { writeHead }, next);
+          if (allowed) {
+            expect(next).toHaveBeenCalledOnce();
+            expect(writeHead).not.toHaveBeenCalled();
+            expect(headers.authorization).toBeUndefined();
+            expect(headers.cookie).toBeUndefined();
+          } else {
+            expect(next).not.toHaveBeenCalled();
+            expect(writeHead).toHaveBeenCalledWith(403, { "Cache-Control": "no-store" });
+            expect(end).toHaveBeenCalledOnce();
+          }
+        }
+      }
+
+      const next = vi.fn();
+      const end = vi.fn();
+      const writeHead = vi.fn().mockReturnValue({ end });
+      handle({
+        url: "/api/v1/tenants/tenant-a/cases/queue?limit=25",
+        method: "GET", headers: { host: "127.0.0.1:5173" },
+        socket: { remoteAddress: "127.0.0.1" },
+      }, { writeHead }, next);
+      expect(next).not.toHaveBeenCalled();
+      expect(writeHead).toHaveBeenCalledWith(403, { "Cache-Control": "no-store" });
+    }
+  });
+
 });

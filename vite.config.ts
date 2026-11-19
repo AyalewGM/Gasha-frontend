@@ -15,6 +15,14 @@ function syntheticProxyBoundary(apiPrefix: string): Plugin {
     server.middlewares.use((request, response, next) => {
       const path = request.url ?? "";
       if (path !== apiPrefix && !path.startsWith(apiPrefix + "/")) return next();
+      // The anonymous synthetic endpoint is deliberately local-only. A UI
+      // host check cannot protect a directly addressed Vite proxy endpoint.
+      // Enforce both the canonical Host and the actual TCP peer on dev/preview.
+      if (!LOCAL_HOST.test(request.headers.host ?? "") ||
+        !LOCAL_PEERS.has(request.socket.remoteAddress ?? "")) {
+        response.writeHead(403, { "Cache-Control": "no-store" }).end();
+        return;
+      }
       if (
         (path === apiPrefix + "/health/live" && request.method === "GET") ||
         (path === apiPrefix + "/v1/decisions" && request.method === "POST")
