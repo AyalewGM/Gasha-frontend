@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loadConfigFromFile, type Plugin, type ViteDevServer } from "vite";
+import { loadConfigFromFile, type Plugin, type PreviewServer, type ViteDevServer } from "vite";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -145,13 +145,21 @@ describe("dev and preview API proxy configuration", () => {
     expect(plugin).toBeDefined();
 
     for (const hookName of ["configureServer", "configurePreviewServer"] as const) {
-      const configure = plugin![hookName];
-      if (typeof configure !== "function") throw new Error("Missing synthetic proxy boundary");
       const use = vi.fn();
-      configure.call(
-        {} as ThisParameterType<typeof configure>,
-        { middlewares: { use } } as unknown as ViteDevServer,
-      );
+      const server = { middlewares: { use } };
+      if (hookName === "configureServer") {
+        const configure = plugin!.configureServer;
+        if (typeof configure !== "function") throw new Error("Missing synthetic dev boundary");
+        configure.call(
+          {} as ThisParameterType<typeof configure>, server as unknown as ViteDevServer,
+        );
+      } else {
+        const configure = plugin!.configurePreviewServer;
+        if (typeof configure !== "function") throw new Error("Missing synthetic preview boundary");
+        configure.call(
+          {} as ThisParameterType<typeof configure>, server as unknown as PreviewServer,
+        );
+      }
       const handle = use.mock.calls[0][0];
       expect(typeof handle).toBe("function");
 
