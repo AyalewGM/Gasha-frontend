@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createServer as createHttpServer, request as httpRequest, type Server } from "node:http";
+import { createServer as createHttpServer, request as httpRequest } from "node:http";
+import { type Server as TcpServer } from "node:net";
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { networkInterfaces, tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,13 +17,13 @@ afterEach(() => {
   workDir = undefined;
 });
 
-function portOf(server: Server): number {
+function portOf(server: TcpServer): number {
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Missing TCP listener");
   return address.port;
 }
 
-async function listen(server: Server, host: string): Promise<number> {
+async function listen(server: TcpServer, host: string): Promise<number> {
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(0, host, resolve);
@@ -30,7 +31,7 @@ async function listen(server: Server, host: string): Promise<number> {
   return portOf(server);
 }
 
-function closeServer(server: Server): Promise<void> {
+function closeServer(server: TcpServer): Promise<void> {
   return new Promise((resolve, reject) => {
     server.close((error) => error ? reject(error) : resolve());
   });
@@ -104,14 +105,15 @@ describe("synthetic decision proxy TCP ingress (no Bank services)", () => {
       dev = await createServer({
         configFile,
         mode: "gasha_socket",
-        root: workDir,
+        root: projectRoot,
         server: { host: "0.0.0.0", port: 0, strictPort: false },
       });
       await dev.listen();
       previewServer = await preview({
         configFile,
         mode: "gasha_socket",
-        root: workDir,
+        root: projectRoot,
+        build: { outDir: join(workDir, "dist") },
         preview: { host: "0.0.0.0", port: 0, strictPort: false },
       });
 
