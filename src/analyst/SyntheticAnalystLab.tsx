@@ -63,10 +63,21 @@ function Investigation({ session }: { readonly session: Session }) {
     return projection;
   }
 
+  // Queue refresh and case selection are hard display/action boundaries.
+  // Preserve uncertainWrites: an ambiguous POST must remain blocked even when
+  // the queue is reloaded or the case is selected again.
+  function clearOpenedCase() {
+    setReference(null);
+    setHistory(null);
+    setAssignee("");
+    setDisposition("confirmed_fraud");
+  }
+
   function refreshQueue() {
     void run(async () => {
       setQueue(null);
       setSelected("");
+      clearOpenedCase();
       const projection = parseProtectedCaseQueue(await session.reader.readQueue(LIMIT), LIMIT);
       if (!activeView.current) return;
       setQueue(projection);
@@ -164,7 +175,10 @@ function Investigation({ session }: { readonly session: Session }) {
       {queue && queue.items.length > 0 && (
         <div className="analyst-lab-actions">
           <label>Case to investigate
-            <select disabled={busy} value={selected} onChange={(event) => setSelected(event.target.value)}>
+            <select disabled={busy} value={selected} onChange={(event) => {
+              setSelected(event.target.value);
+              clearOpenedCase();
+            }}>
               {queue.items.map((item) => <option key={item.case_id} value={item.case_id}>{item.case_id}</option>)}
             </select>
           </label>

@@ -146,3 +146,130 @@ it("blocks a fresh idempotency key while an uncertain write may still be process
   expect(host.textContent).not.toContain("Case actions are paused");
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
 });
+
+const OTHER_CASE = "00000000-0000-4000-8000-000000000051";
+const OTHER_SOURCE = "00000000-0000-4000-8000-000000000052";
+
+function otherQueue() {
+  const result = queue();
+  return {
+    ...result,
+    items: [{ ...result.items[0], case_id: OTHER_CASE, source_event_id: OTHER_SOURCE }],
+  };
+}
+
+function twoCaseQueue() {
+  const result = queue();
+  return {
+    ...result,
+    items: [
+      result.items[0],
+      { ...result.items[0], rank: 2, case_id: OTHER_CASE, source_event_id: OTHER_SOURCE },
+    ],
+  };
+}
+
+function otherHistory() {
+  return {
+    ...history(),
+    case_id: OTHER_CASE,
+    events: [{ ...INITIAL, source_event_id: OTHER_SOURCE }],
+  };
+}
+
+it("removes A's previously opened case and actions when a refreshed queue omits A", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(json(queue()))
+    .mockResolvedValueOnce(json(history()))
+    .mockResolvedValueOnce(json({ ...queue(), items: [] }));
+  await enterSession();
+  await click("Refresh queue");
+  await click("Open case");
+  expect(host.textContent).toContain("Triage case");
+  await click("Refresh queue");
+  expect(host.textContent).not.toContain(CASE);
+  expect(host.textContent).not.toContain("Revision 1: create");
+  expect(host.querySelector('[aria-label="Case actions"]')).toBeNull();
+  expect(host.textContent).not.toContain("Refresh case history");
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+});
+
+it("invalidates A's opened case when the analyst selects B, until B history is verified", async () => {
+  const fetchMock = vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(json(twoCaseQueue()))
+    .mockResolvedValueOnce(json(history()))
+    .mockResolvedValueOnce(json(otherHistory()));
+  await enterSession();
+  await click("Refresh queue");
+  await click("Open case");
+  expect(host.textContent).toContain("Revision 1: create");
+  const select = host.querySelector<HTMLSelectElement>('select');
+  expect(select).toBeTruthy();
+  const setter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+  await act(async () => {
+    setter.call(select, OTHER_CASE);
+    select!.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  expect(host.textContent).not.toContain("Revision 1: create");
+  expect(host.querySelector('[aria-label="Case actions"]')).toBeNull();
+  expect(host.textContent).not.toContain("Refresh case history");
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  await click("Open case");
+  expect(fetchMock.mock.calls[2][0]).toBe(PATH + "/" + OTHER_CASE + "/history");
+  expect(host.textContent).toContain("Revision 1: create");
+  expect(host.textContent).toContain(OTHER_CASE);
+});
+
+it("clears A immediately while a replacement queue GET is delayed; no stale POST can start", async () => {
+  let finishQueue!: (response: Response) => void;
+  const pendingQueue = new Promise<Response>((resolve) => { finishQueue = resolve; });
+  const fetchMock = vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(json(queue()))
+    .mockResolvedValueOnce(json(history()))
+    .mockReturnValueOnce(pendingQueue);
+  await enterSession();
+  await click("Refresh queue");
+  await click("Open case");
+  await click("Refresh queue");
+  expect(host.textContent).not.toContain("Revision 1: create");
+  expect(host.querySelector('[aria-label="Case actions"]')).toBeNull();
+  expect(host.textContent).not.toContain("Refresh case history");
+  expect(host.textContent).toContain("Protected case request in progress.");
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  await act(async () => { finishQueue(json(otherQueue())); });
+  expect(host.textContent).toContain(OTHER_CASE);
+  expect(host.textContent).not.toContain(CASE);
+  expect(host.querySelector('[aria-label="Case actions"]')).toBeNull();
+});
+
+it("serializes a delayed POST before refresh and never restores old actions after a B-only queue", async () => {
+  let finishWrite!: (response: Response) => void;
+  const pendingWrite = new Promise<Response>((resolve) => { finishWrite = resolve; });
+  const fetchMock = vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(json(queue()))
+    .mockResolvedValueOnce(json(history()))
+    .mockReturnValueOnce(pendingWrite)
+    .mockResolvedValueOnce(json(history(true)))
+    .mockResolvedValueOnce(json(otherQueue()));
+  await enterSession();
+  await click("Refresh queue");
+  await click("Open case");
+  await click("Triage case");
+  const refresh = [...host.querySelectorAll("button")].find((b) => b.textContent === "Refresh queue");
+  expect(refresh?.disabled).toBe(true);
+  await click("Refresh queue"); // Disabled: no overlapping refresh or second write.
+  expect(fetchMock).toHaveBeenCalledTimes(3);
+  await act(async () => {
+    finishWrite(json({
+      case_id: CASE, source_event_id: SOURCE, revision: 2, operation: "triage",
+      disposition: null, bank_execution: "unknown", enforcement_activated: false,
+    }));
+  });
+  expect(host.textContent).toContain("Revision 2: triage");
+  await click("Refresh queue");
+  expect(host.textContent).toContain(OTHER_CASE);
+  expect(host.textContent).not.toContain(CASE);
+  expect(host.textContent).not.toContain("Revision 2: triage");
+  expect(host.querySelector('[aria-label="Case actions"]')).toBeNull();
+  expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+});
