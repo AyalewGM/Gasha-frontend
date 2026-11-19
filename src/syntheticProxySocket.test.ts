@@ -92,6 +92,8 @@ describe("synthetic decision proxy TCP ingress (no Bank services)", () => {
 
     let dev: ViteDevServer | undefined;
     let previewServer: PreviewServer | undefined;
+    let devIpv6: ViteDevServer | undefined;
+    let previewIpv6: PreviewServer | undefined;
     try {
       const backendPort = await listen(backend, "127.0.0.1");
       writeFileSync(
@@ -115,6 +117,23 @@ describe("synthetic decision proxy TCP ingress (no Bank services)", () => {
         root: projectRoot,
         build: { outDir: join(workDir, "dist") },
         preview: { host: "0.0.0.0", port: 0, strictPort: false },
+      });
+
+      // A real IPv6 listener is required: mocking remoteAddress = "::1"
+      // would not verify Vite's socket/proxy behavior on IPv6.
+      devIpv6 = await createServer({
+        configFile,
+        mode: "gasha_socket",
+        root: projectRoot,
+        server: { host: "::", port: 0, strictPort: false },
+      });
+      await devIpv6.listen();
+      previewIpv6 = await preview({
+        configFile,
+        mode: "gasha_socket",
+        root: projectRoot,
+        build: { outDir: join(workDir, "dist") },
+        preview: { host: "::", port: 0, strictPort: false },
       });
 
       const nonlocalIp = localNonLoopbackIPv4();
@@ -149,7 +168,32 @@ describe("synthetic decision proxy TCP ingress (no Bank services)", () => {
           }
         }
       }
+
+      for (const [kind, port] of [
+        ["dev IPv6", portOf(devIpv6.httpServer!)],
+        ["preview IPv6", portOf(previewIpv6.httpServer)],
+      ] as const) {
+        for (const [path, method, forwardedPath] of [
+          ["/api/v1/decisions", "POST", "/v1/decisions"],
+          ["/api/health/live", "GET", "/health/live"],
+        ] as const) {
+          const allowed = await send("::1", port, `[::1]:${port}`, path, method);
+          expect(allowed.status, `${kind} ${method} ${path}`).toBe(200);
+          expect(seen.at(-1)).toEqual({
+            path: forwardedPath, cookie: undefined, authorization: undefined,
+          });
+
+          // A spoofed remote Host over a genuine ::1 socket must not
+          // reach the synthetic backend even though the TCP peer is local.
+          const before = seen.length;
+          const denied = await send("::1", port, `bank.example:${port}`, path, method);
+          expect(denied.status, `${kind} spoofed Host`).toBe(403);
+          expect(seen).toHaveLength(before);
+        }
+      }
     } finally {
+      if (devIpv6) await devIpv6.close();
+      if (previewIpv6) await closeServer(previewIpv6.httpServer);
       if (dev) await dev.close();
       if (previewServer) await closeServer(previewServer.httpServer);
       await closeServer(backend);
