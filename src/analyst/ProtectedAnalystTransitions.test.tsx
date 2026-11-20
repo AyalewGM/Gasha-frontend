@@ -140,3 +140,45 @@ it.each([401, 403, 404, 503])("denied %i history read removes prior case control
   expect(host.textContent).not.toContain("sensitive customer details");
   expect(writer.submit).not.toHaveBeenCalled();
 });
+
+it.each([401, 403, 404, 503])("denied %i first case open purges the visible queue", async (status) => {
+  const reader = {
+    readQueue: vi.fn().mockResolvedValue(queue),
+    readHistory: vi.fn().mockRejectedValue(Object.assign(new Error("sensitive PII"), { status })),
+  };
+  const writer = { submit: vi.fn() };
+  await act(async () => root.render(createElement(ProtectedAnalystEntry, {
+    session: { epoch: "epoch-a", reader, writer },
+  })));
+  await click("Refresh queue");
+  expect(host.textContent).toContain(CASE);
+  await click("Open case");
+  expect(host.textContent).not.toContain(CASE);
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(String(status));
+  expect(host.textContent).not.toContain("sensitive PII");
+  expect(writer.submit).not.toHaveBeenCalled();
+});
+
+it("late history from retired epoch cannot restore the former case or actions", async () => {
+  let finish!: (result: unknown) => void;
+  const delayed = new Promise<unknown>((resolve) => { finish = resolve; });
+  const reader = {
+    readQueue: vi.fn().mockResolvedValue(queue),
+    readHistory: vi.fn().mockReturnValue(delayed),
+  };
+  const writer = { submit: vi.fn() };
+  await act(async () => root.render(createElement(ProtectedAnalystEntry, {
+    session: { epoch: "epoch-a", reader, writer },
+  })));
+  await click("Refresh queue");
+  await act(async () => { button("Open case").click(); });
+  expect(host.textContent).not.toContain("Triage case");
+  await act(async () => root.render(createElement(ProtectedAnalystEntry, {
+    session: { epoch: "epoch-b", reader, writer },
+  })));
+  await act(async () => { finish(initial); });
+  expect(host.textContent).not.toContain(CASE);
+  expect(host.textContent).not.toContain("Revision 1");
+  expect(host.querySelector('[aria-label="Case actions"]')).toBeNull();
+  expect(writer.submit).not.toHaveBeenCalled();
+});
