@@ -261,7 +261,7 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
       )}
       {history && <CaseHistoryPanel history={history} />}
       {canWrite && writesPaused && <p role="status">Case actions are paused until a newer revision appears in case history.</p>}
-      {canWrite && latest && !writesPaused && (
+      {canWrite && latest && latest.operation !== "reconcile" && !writesPaused && (
         <section aria-label="Case actions" className="analyst-lab-actions">
           {latest.operation === "create" && (
             <button type="button" disabled={busy} onClick={() => submit({ operation: "triage" })}>
