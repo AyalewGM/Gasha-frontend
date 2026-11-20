@@ -122,7 +122,14 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
       setHistory(candidate.history);
       setAssignee("");
       setDisposition("confirmed_fraud");
-    }, (reason) => setError(readError(reason)));
+    }, (reason) => {
+      if (terminalReadFailure(reason)) {
+        setQueue(null);
+        setSelected("");
+        clearOpenedCase();
+      }
+      setError(readError(reason));
+    });
   }
 
   function refreshHistory() {
@@ -213,7 +220,7 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
           <p>These page-only counts are not total backlog, fraud-detection accuracy,
             turnaround performance or Bank-approved KPIs.</p>
         </section>
-      )
+      )}
       {queue && queue.items.length > 0 && (
         <div className="analyst-lab-actions">
           <label>Case to investigate
