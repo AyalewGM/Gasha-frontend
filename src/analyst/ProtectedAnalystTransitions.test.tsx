@@ -220,3 +220,44 @@ it.each([401, 403, 404, 503])(
     expect(writer.submit).toHaveBeenCalledTimes(1);
   },
 );
+
+it.each([
+  ["foreign case receipt", { case_id: "00000000-0000-4000-8000-000000000099" }],
+  ["foreign source receipt", { source_event_id: "00000000-0000-4000-8000-000000000098" }],
+  ["unexpected revision", { revision: 3 }],
+  ["different operation", { operation: "assign" }],
+  ["unexpected disposition", { disposition: "confirmed_fraud" }],
+  ["forged Bank execution", { bank_execution: "executed" }],
+  ["forged enforcement activation", { enforcement_activated: true }],
+] as [string, Record<string, unknown>][])(
+  "untrusted injected writer %s cannot acknowledge a case action or enable a repeated POST",
+  async (_label, mutation) => {
+    const reader = {
+      readQueue: vi.fn().mockResolvedValue(queue),
+      readHistory: vi.fn().mockResolvedValue(initial),
+    };
+    const writer = { submit: vi.fn().mockResolvedValue({
+      case_id: CASE, source_event_id: SOURCE, revision: 2, operation: "triage",
+      disposition: null, bank_execution: "unknown", enforcement_activated: false,
+      ...mutation,
+    }) };
+    await act(async () => root.render(createElement(ProtectedAnalystEntry, {
+      session: { epoch: "receipt-integrity", reader, writer },
+    })));
+    await click("Refresh queue");
+    await click("Open case");
+    await click("Triage case");
+    expect(writer.submit).toHaveBeenCalledTimes(1);
+    // An anomalous receipt must not trigger a trusted follow-up success read.
+    expect(reader.readHistory).toHaveBeenCalledTimes(1);
+    expect(host.textContent).not.toContain("Case action recorded.");
+    expect(host.textContent).not.toContain("Action acknowledged.");
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain("could not be confirmed");
+    expect(host.textContent).not.toContain("Triage case");
+    // The same prior revision, even if retrieved again, remains fenced.
+    await click("Refresh case history");
+    expect(host.textContent).toContain("Case actions are paused");
+    expect(host.textContent).not.toContain("Triage case");
+    expect(writer.submit).toHaveBeenCalledTimes(1);
+  },
+);

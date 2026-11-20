@@ -164,6 +164,21 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
         reference.caseId, history, proposal, crypto.randomUUID().replaceAll("-", ""),
       );
       if (!activeView.current) return;
+      // Even an injected host writer must return a receipt for this exact
+      // case, source, revision and proposed action. A mismatched receipt is an
+      // uncertain write, never proof of a Bank action or permission to retry.
+      const expectedDisposition =
+        proposal.operation === "dispose" || proposal.operation === "correct"
+          ? proposal.disposition : null;
+      if (receipt?.case_id !== caseId ||
+        receipt.source_event_id !== reference.sourceEventId ||
+        receipt.revision !== priorRevision + 1 ||
+        receipt.operation !== proposal.operation ||
+        receipt.disposition !== expectedDisposition ||
+        receipt.bank_execution !== "unknown" ||
+        receipt.enforcement_activated !== false) {
+        throw new CaseTransitionFailure("outcome_unknown");
+      }
       try {
         const updated = await readHistory(reference);
         const event = updated.events[receipt.revision - 1];
