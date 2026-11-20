@@ -1,4 +1,5 @@
 import type { ProtectedCaseReadPort } from "./ReadOnlyAnalystJourney";
+import type { ProtectedCaseWritePort } from "./AnalystInvestigation";
 
 /**
  * Trusted composition contract for Issue #9 Phase A. The installed session
@@ -13,6 +14,8 @@ import type { ProtectedCaseReadPort } from "./ReadOnlyAnalystJourney";
 export interface InstalledProtectedAnalystSession {
   readonly epoch: string;
   readonly reader: ProtectedCaseReadPort;
+  /** Opt-in only after independently accepted backend authorization/CSRF contract. */
+  readonly writer?: ProtectedCaseWritePort;
 }
 
 /**

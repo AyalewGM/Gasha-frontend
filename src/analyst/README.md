@@ -36,3 +36,27 @@ The browser lab runs only on an explicitly enabled Vite development server.
 Production builds and Vite Preview cannot install the lab. A Bank installation
 requires separate Security/Architecture and QA acceptance of identity,
 ingress, CSRF, authorization, audit and the durable readers and writer.
+
+## Protected case actions: opt-in host composition
+
+The protected route can reuse the neutral `AnalystInvestigation` component
+when the independently installed `InstalledProtectedAnalystSession` supplies
+both reader and writer. It remains read-only with only a reader and
+unavailable without a session. The default installed-session getter still
+returns `null`; there is no Bank identity provider, browser token,
+CSRF/ingress installation, production BFF, or release activation in this PR.
+
+A separately reviewed host must supply a verified server-owned tenant scope,
+fresh session epoch, independently authorized case read/write ports, CSRF
+protection, redacted durable audit and revocation/expiry/rotation/logout.
+The browser must never obtain tenant, role, capability or credentials from
+URL/query/editable controls or browser storage. Changing the supplied epoch
+remounts the view and discards previous case/action state and late UI responses.
+An ambiguous case POST must be reconciled via trusted history before any
+new mutation; no automatic retries or payment enforcement are implied.
+
+The page displays only partial, page-local queue counts, not whole-tenant
+backlog, fraud accuracy or Bank-approved KPIs. Cross-repository real-HTTP
+browser E2E for 401/403/foreign-404/503, CSRF, revocation, stale response,
+audit failure, alert generation and full workflow remains mandatory before
+protected Bank installation. Depend on backend #45, #148 and #142.
