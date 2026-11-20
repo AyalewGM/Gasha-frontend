@@ -37,8 +37,10 @@ export function ProtectedAnalystEntry({
     <main aria-label="Protected analyst workspace">
       <h1>Gasha — Protected analyst workspace</h1>
       <p>
-        Read-only, server-ordered investigation queue. No Bank ranking approval,
-        payment execution or enforcement is supplied by this page.
+        {session.writer
+          ? "Server-ordered investigation queue with separately authorized case actions."
+          : "Read-only, server-ordered investigation queue."}
+        {" "}No Bank ranking approval, payment execution or enforcement is supplied by this page.
       </p>
       {session.writer ? (
         <AnalystInvestigation key={session.epoch} session={session} />
