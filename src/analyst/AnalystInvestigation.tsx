@@ -171,10 +171,20 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
           throw new Error("Missing recorded case action");
         }
         if (activeView.current) setHistory(updated);
-      } catch {
+      } catch (reason: unknown) {
         if (activeView.current) {
+          // A validated write receipt is not proof that the session can still
+          // read this case. Keep the revision fence, but discard identifiers
+          // and controls immediately on a terminal authorization/read failure.
           requireAdvancingHistory();
-          setNotice("Action acknowledged. Refresh case history before continuing.");
+          if (terminalReadFailure(reason)) {
+            setQueue(null);
+            setSelected("");
+            clearOpenedCase();
+            setError(readError(reason));
+          } else {
+            setNotice("Action acknowledged. Refresh case history before continuing.");
+          }
         }
         return;
       }

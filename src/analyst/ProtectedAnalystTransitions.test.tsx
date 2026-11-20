@@ -182,3 +182,41 @@ it("late history from retired epoch cannot restore the former case or actions", 
   expect(host.querySelector('[aria-label="Case actions"]')).toBeNull();
   expect(writer.submit).not.toHaveBeenCalled();
 });
+
+it.each([401, 403, 404, 503])(
+  "a denied %i history read after a successful write receipt clears case authority and keeps revision safety",
+  async (status) => {
+    const reader = {
+      readQueue: vi.fn().mockResolvedValue(queue),
+      readHistory: vi.fn().mockResolvedValueOnce(initial).mockRejectedValueOnce(
+        Object.assign(new Error("sensitive account information"), { status }),
+      ),
+    };
+    const writer = { submit: vi.fn().mockResolvedValue({
+      case_id: CASE, source_event_id: SOURCE, revision: 2, operation: "triage",
+      disposition: null, bank_execution: "unknown", enforcement_activated: false,
+    }) };
+    await act(async () => root.render(createElement(ProtectedAnalystEntry, {
+      session: { epoch: "epoch-denial-after-write", reader, writer },
+    })));
+    await click("Refresh queue");
+    await click("Open case");
+    expect(host.textContent).toContain("Triage case");
+    await click("Triage case");
+    expect(writer.submit).toHaveBeenCalledTimes(1);
+    expect(host.textContent).not.toContain(CASE);
+    expect(host.querySelector('[aria-label="Case actions"]')).toBeNull();
+    expect(host.textContent).not.toContain("Action acknowledged");
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain(String(status));
+    expect(host.textContent).not.toContain("sensitive account information");
+    expect(host.textContent).not.toContain("Refresh case history");
+    // Once the service resumes, the earlier unknown revision remains fenced:
+    // reopening the same revision must not offer another POST.
+    reader.readHistory.mockResolvedValueOnce(initial);
+    await click("Refresh queue");
+    await click("Open case");
+    expect(host.textContent).toContain("Case actions are paused");
+    expect(host.textContent).not.toContain("Triage case");
+    expect(writer.submit).toHaveBeenCalledTimes(1);
+  },
+);
