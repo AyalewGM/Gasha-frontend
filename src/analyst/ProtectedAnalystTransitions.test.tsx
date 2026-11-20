@@ -261,3 +261,105 @@ it.each([
     expect(writer.submit).toHaveBeenCalledTimes(1);
   },
 );
+
+
+/**
+ * #9 acceptance regression for the entire injected-port analyst journey.
+ * These are synthetic DOM/contract assertions, NOT a browser-to-HTTP E2E,
+ * installed Bank identity, computed ranking or approved tenant KPI.
+ */
+it("completes the synthetic queue → immutable case → triage/assign/dispose/correct/reconcile journey without browser authority", async () => {
+  const ASSIGNEE = "00000000-0000-4000-8000-000000000043";
+  const events = [
+    created,
+    { ...created, revision: 2, previous_revision: 1, operation: "triage",
+      reason_code: "analyst_triage", recorded_at: "2026-11-07T10:01:00.000001Z" },
+    { ...created, revision: 3, previous_revision: 2, operation: "assign",
+      reason_code: "investigation_assigned", assignee_ref: "b".repeat(64),
+      recorded_at: "2026-11-07T10:02:00.000001Z" },
+    { ...created, revision: 4, previous_revision: 3, operation: "dispose",
+      reason_code: "fraud_evidence", disposition: "confirmed_fraud",
+      recorded_at: "2026-11-07T10:03:00.000001Z" },
+    { ...created, revision: 5, previous_revision: 4, operation: "correct",
+      reason_code: "corrected_finding", disposition: "confirmed_legitimate",
+      recorded_at: "2026-11-07T10:04:00.000001Z" },
+    { ...created, revision: 6, previous_revision: 5, operation: "reconcile",
+      reason_code: "feedback_reconciled",
+      recorded_at: "2026-11-07T10:05:00.000001Z" },
+  ];
+  let revision = 1;
+  const reader = {
+    readQueue: vi.fn().mockResolvedValue(queue),
+    readHistory: vi.fn(async () => ({
+      case_id: CASE, enforcement_activated: false, events: events.slice(0, revision),
+    })),
+  };
+  const writer = {
+    submit: vi.fn(async (
+      caseId: string, _history: unknown,
+      proposal: { operation: string; disposition?: string }, idempotencyKey: string,
+    ) => {
+      expect(caseId).toBe(CASE);
+      expect(idempotencyKey).toMatch(/^[0-9a-f]{32}$/);
+      // The UI cannot supply tenant, rank, role or payment authority.
+      expect(Object.keys(proposal).every((key) =>
+        ["operation", "assigneeSelector", "disposition"].includes(key))).toBe(true);
+      revision += 1;
+      expect(events[revision - 1].operation).toBe(proposal.operation);
+      return {
+        case_id: CASE, source_event_id: SOURCE, revision,
+        operation: proposal.operation,
+        disposition: proposal.disposition ?? null,
+        bank_execution: "unknown" as const, enforcement_activated: false as const,
+      };
+    }),
+  };
+  const session = { epoch: "synthetic-journey", reader, writer } as InstalledProtectedAnalystSession;
+  const fetchSpy = vi.spyOn(globalThis, "fetch");
+  try {
+    await act(async () => root.render(createElement(ProtectedAnalystEntry, { session })));
+    await click("Refresh queue");
+    expect(host.textContent).toContain("Open cases on this page: 1");
+    expect(host.textContent).toContain("not total backlog");
+    await click("Open case");
+    expect(host.textContent).toContain("Revision 1: create");
+
+    await click("Triage case");
+    expect(host.textContent).toContain("Revision 2: triage");
+
+    const input = host.querySelector<HTMLInputElement>('input');
+    expect(input).toBeTruthy();
+    const inputSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")!.set!;
+    await act(async () => {
+      inputSetter.call(input, ASSIGNEE);
+      input!.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await click("Assign case");
+    expect(host.textContent).toContain("Revision 3: assign");
+
+    await click("Record disposition");
+    expect(host.textContent).toContain("Revision 4: dispose");
+    const selector = host.querySelector<HTMLSelectElement>('[aria-label="Case actions"] select');
+    expect(selector).toBeTruthy();
+    const selectSetter = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!;
+    await act(async () => {
+      selectSetter.call(selector, "confirmed_legitimate");
+      selector!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await click("Correct disposition");
+    expect(host.textContent).toContain("Revision 5: correct");
+
+    await click("Reconcile feedback");
+    expect(host.textContent).toContain("Revision 6: reconcile");
+    expect(host.querySelector('[aria-label="Case actions"]')).toBeNull();
+    expect(writer.submit.mock.calls).toHaveLength(5);
+    expect(writer.submit.mock.calls.map((call) => call[2].operation)).toEqual([
+      "triage", "assign", "dispose", "correct", "reconcile",
+    ]);
+    expect(reader.readHistory).toHaveBeenCalledTimes(6);
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(host.textContent).not.toContain("payment enforcement activated");
+  } finally {
+    fetchSpy.mockRestore();
+  }
+});
