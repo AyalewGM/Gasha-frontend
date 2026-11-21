@@ -26,7 +26,7 @@ const events = [
   { ...created, revision: 3, previous_revision: 2, operation: "assign",
     reason_code: "investigation_assigned", assignee_ref: ASSIGNEE, recorded_at: at("02") },
   { ...created, revision: 4, previous_revision: 3, operation: "dispose",
-    reason_code: "fraud_evidence", disposition: "confirmed_fraud", recorded_at: at("03") },
+    reason_code: "needs_review", disposition: "unresolved", recorded_at: at("03") },
   { ...created, revision: 5, previous_revision: 4, operation: "correct",
     reason_code: "corrected_finding", disposition: "confirmed_legitimate", recorded_at: at("04") },
   { ...created, revision: 6, previous_revision: 5, operation: "reconcile",
@@ -107,6 +107,7 @@ function recoveryFixture() {
       expect(caseId).toBe(CASE);
       expect(key).toMatch(/^[0-9a-f]{32}$/);
       expect(events[revision].operation).toBe(proposal.operation);
+      if ("disposition" in proposal) expect(events[revision].disposition).toBe(proposal.disposition);
       expect(Object.keys(proposal).every((field) =>
         ["operation", "disposition", "assigneeSelector"].includes(field))).toBe(true);
       revision++;

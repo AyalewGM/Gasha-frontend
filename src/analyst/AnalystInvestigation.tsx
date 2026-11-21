@@ -52,7 +52,7 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [assignee, setAssignee] = useState("");
-  const [disposition, setDisposition] = useState<CaseDisposition>("confirmed_fraud");
+  const [disposition, setDisposition] = useState<CaseDisposition>("unresolved");
   const requestPending = useRef(false);
   const activeView = useRef(true);
 
@@ -105,7 +105,7 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
     setHistory(null);
     setEvidence(null);
     setAssignee("");
-    setDisposition("confirmed_fraud");
+    setDisposition("unresolved");
   }
 
   function refreshQueue() {
@@ -153,7 +153,7 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
       setHistory(candidate.history);
       setEvidence(verifiedEvidence);
       setAssignee("");
-      setDisposition("confirmed_fraud");
+      setDisposition("unresolved");
     }, (reason) => {
       setHistory(null);
       setEvidence(null);
@@ -339,11 +339,12 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
             }}>
               <label>Disposition
                 <select value={disposition} onChange={(event) => setDisposition(event.target.value as CaseDisposition)}>
+                  <option value="unresolved">Unresolved</option>
                   <option value="confirmed_fraud">Confirmed fraud</option>
                   <option value="confirmed_legitimate">Confirmed legitimate</option>
-                  <option value="unresolved">Unresolved</option>
                 </select>
               </label>
+              <p>Unresolved is the default. Confirmed outcomes require independently verified evidence.</p>
               <button type="submit" disabled={busy || latest.disposition === disposition}>
                 {latest.operation === "assign" ? "Record disposition" : "Correct disposition"}
               </button>

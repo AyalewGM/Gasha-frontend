@@ -308,7 +308,7 @@ it("keeps a disposed case retry-only after fetch loses the connection; an empty 
   ];
   const disposed = [...assigned, {
     ...INITIAL, revision: 4, previous_revision: 3, operation: "dispose",
-    reason_code: "fraud_evidence", disposition: "confirmed_fraud",
+    reason_code: "needs_review", disposition: "unresolved",
   }];
   const initialQueue = queue();
   const fetchMock = spyLabFetch()
@@ -320,7 +320,7 @@ it("keeps a disposed case retry-only after fetch loses the connection; an empty 
     .mockResolvedValueOnce(json({ case_id: CASE, enforcement_activated: false, events: assigned }))
     .mockResolvedValueOnce(json({
       case_id: CASE, source_event_id: SOURCE, revision: 4, operation: "dispose",
-      disposition: "confirmed_fraud", bank_execution: "unknown", enforcement_activated: false,
+      disposition: "unresolved", bank_execution: "unknown", enforcement_activated: false,
     }))
     .mockRejectedValueOnce(new TypeError("synthetic confidential connection failure"))
     .mockResolvedValueOnce(json({ ...initialQueue, items: [] }))
@@ -331,7 +331,14 @@ it("keeps a disposed case retry-only after fetch loses the connection; an empty 
     await click("Refresh queue");
     await click("Open case");
     expect(host.textContent).toContain("Revision 3: assign");
+    // An unlabeled synthetic anomaly must never default to confirmed fraud.
+    expect(host.querySelector<HTMLSelectElement>('[aria-label="Case actions"] select')?.value).toBe("unresolved");
     await click("Record disposition");
+    const write = fetchMock.mock.calls.find(([, init]) => init?.method === "POST");
+    expect(write).toBeDefined();
+    expect(JSON.parse(write![1]!.body as string)).toMatchObject({
+      disposition: "unresolved", reason_code: "needs_review",
+    });
     expect(host.textContent).not.toContain("Revision 3: assign");
     expect(host.querySelector('[aria-label="Case actions"]')).toBeNull();
     expect(host.textContent).toContain("Refresh case history");
