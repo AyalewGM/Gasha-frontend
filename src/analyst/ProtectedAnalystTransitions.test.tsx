@@ -209,7 +209,12 @@ it.each([401, 403, 404, 503])(
     expect(host.textContent).not.toContain("Action acknowledged");
     expect(host.querySelector('[role="alert"]')?.textContent).toContain(String(status));
     expect(host.textContent).not.toContain("sensitive account information");
-    expect(host.textContent).not.toContain("Refresh case history");
+    if (status === 503) {
+      // A transient outage keeps only a retry handle, not readable history or actions.
+      expect(host.textContent).toContain("Refresh case history");
+    } else {
+      expect(host.textContent).not.toContain("Refresh case history");
+    }
     // Once the service resumes, the earlier unknown revision remains fenced:
     // reopening the same revision must not offer another POST.
     reader.readHistory.mockResolvedValueOnce(initial);
