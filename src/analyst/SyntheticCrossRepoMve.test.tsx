@@ -64,7 +64,15 @@ function python(action: string): void {
   // The fixture contains private synthetic bearer tokens. Never echo the
   // spawned command's stdout/stderr or exception to an operator log.
   if (result.status !== 0 || result.error) {
-    throw new Error("Disposable synthetic PostgreSQL fixture step failed: " + action);
+    // Only emit known constant stage/reason identifiers, never raw stdout,
+    // stderr, connection URLs, synthetic bearer tokens or DB record values.
+    const stage = result.stdout?.match(/SYNTHETIC_INTERNAL_[A-Z_]+/g)?.at(-1)
+      ?? "SYNTHETIC_INTERNAL_SETUP";
+    const reason = result.stderr?.match(/AssertionError: (metrics_[a-z_]+)/)?.[1]
+      ?? result.stderr?.match(/(?:CaseMetricsRejected|TypeError|ValueError|AssertionError)/)?.[0]
+      ?? "unclassified";
+    throw new Error("Disposable synthetic PostgreSQL fixture step failed: " +
+      action + " at " + stage + " (" + reason + ")");
   }
 }
 
