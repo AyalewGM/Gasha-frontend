@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProtectedAnalystEntry } from "./ProtectedAnalystEntry";
+import { foundingEvidence } from "./foundingEvidence.testFixtures";
 import type { InstalledProtectedAnalystSession } from "./installedProtectedSession";
 
 const CASE = "00000000-0000-4000-8000-000000000041";
@@ -58,6 +59,7 @@ afterEach(async () => {
 
 it("mounts server-bound case transitions only for an explicitly injected writer; no Bank activation", async () => {
   const reader = {
+    readFeatureEvidence: vi.fn(async (caseId: string) => foundingEvidence(caseId, CONTEXT)),
     readQueue: vi.fn().mockResolvedValue(queue),
     readHistory: vi.fn().mockResolvedValueOnce(initial).mockResolvedValueOnce(triaged),
   };
@@ -91,7 +93,8 @@ it("mounts server-bound case transitions only for an explicitly injected writer;
 });
 
 it("a writer cannot be injected through a malformed installed session", async () => {
-  const reader = { readQueue: vi.fn(), readHistory: vi.fn() };
+  const reader = {
+    readFeatureEvidence: vi.fn(async (caseId: string) => foundingEvidence(caseId, CONTEXT)), readQueue: vi.fn(), readHistory: vi.fn() };
   const session = { epoch: "test", reader, writer: {} } as unknown as InstalledProtectedAnalystSession;
   await act(async () => root.render(createElement(ProtectedAnalystEntry, { session })));
   expect(host.textContent).toContain("No trusted analyst session");
@@ -101,6 +104,7 @@ it("a writer cannot be injected through a malformed installed session", async ()
 
 it("a changed trusted epoch discards previously opened case and its actionable controls", async () => {
   const reader = {
+    readFeatureEvidence: vi.fn(async (caseId: string) => foundingEvidence(caseId, CONTEXT)),
     readQueue: vi.fn().mockResolvedValue(queue),
     readHistory: vi.fn().mockResolvedValue(initial),
   };
@@ -122,6 +126,7 @@ it("a changed trusted epoch discards previously opened case and its actionable c
 
 it.each([401, 403, 404, 503])("denied %i history read removes prior case controls without leaking details", async (status) => {
   const reader = {
+    readFeatureEvidence: vi.fn(async (caseId: string) => foundingEvidence(caseId, CONTEXT)),
     readQueue: vi.fn().mockResolvedValue(queue),
     readHistory: vi.fn().mockResolvedValueOnce(initial)
       .mockRejectedValueOnce(Object.assign(new Error("sensitive customer details"), { status })),
@@ -143,6 +148,7 @@ it.each([401, 403, 404, 503])("denied %i history read removes prior case control
 
 it.each([401, 403, 404, 503])("denied %i first case open purges the visible queue", async (status) => {
   const reader = {
+    readFeatureEvidence: vi.fn(async (caseId: string) => foundingEvidence(caseId, CONTEXT)),
     readQueue: vi.fn().mockResolvedValue(queue),
     readHistory: vi.fn().mockRejectedValue(Object.assign(new Error("sensitive PII"), { status })),
   };
@@ -163,6 +169,7 @@ it("late history from retired epoch cannot restore the former case or actions", 
   let finish!: (result: unknown) => void;
   const delayed = new Promise<unknown>((resolve) => { finish = resolve; });
   const reader = {
+    readFeatureEvidence: vi.fn(async (caseId: string) => foundingEvidence(caseId, CONTEXT)),
     readQueue: vi.fn().mockResolvedValue(queue),
     readHistory: vi.fn().mockReturnValue(delayed),
   };
@@ -187,6 +194,7 @@ it.each([401, 403, 404, 503])(
   "a denied %i history read after a successful write receipt clears case authority and keeps revision safety",
   async (status) => {
     const reader = {
+    readFeatureEvidence: vi.fn(async (caseId: string) => foundingEvidence(caseId, CONTEXT)),
       readQueue: vi.fn().mockResolvedValue(queue),
       readHistory: vi.fn().mockResolvedValueOnce(initial).mockRejectedValueOnce(
         Object.assign(new Error("sensitive account information"), { status }),
@@ -238,6 +246,7 @@ it.each([
   "untrusted injected writer %s cannot acknowledge a case action or enable a repeated POST",
   async (_label, mutation) => {
     const reader = {
+    readFeatureEvidence: vi.fn(async (caseId: string) => foundingEvidence(caseId, CONTEXT)),
       readQueue: vi.fn().mockResolvedValue(queue),
       readHistory: vi.fn().mockResolvedValue(initial),
     };
@@ -294,6 +303,7 @@ it("completes the synthetic queue → immutable case → triage/assign/dispose/c
   ];
   let revision = 1;
   const reader = {
+    readFeatureEvidence: vi.fn(async (caseId: string) => foundingEvidence(caseId, CONTEXT)),
     readQueue: vi.fn().mockResolvedValue(queue),
     readHistory: vi.fn(async () => ({
       case_id: CASE, enforcement_activated: false, events: events.slice(0, revision),

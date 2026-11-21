@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { CaseHistoryPanel } from "./CaseHistoryPanel";
+import { FoundingEvidencePanel } from "./FoundingEvidencePanel";
+import { parseProtectedCaseFeatureEvidence, type FoundingFeatureEvidence } from "./caseFeatureEvidence";
 import { CaseQueuePanel } from "./CaseQueuePanel";
 import { parseProtectedCaseHistory, type CaseDisposition, type CaseHistoryProjection } from "./caseHistory";
 import { parseProtectedCaseQueue, type CaseQueueProjection } from "./caseQueue";
@@ -45,6 +47,7 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
   const [uncertainWrites, setUncertainWrites] = useState<ReadonlyMap<string, number>>(new Map());
   const [reference, setReference] = useState<CaseReference | null>(null);
   const [history, setHistory] = useState<CaseHistoryProjection | null>(null);
+  const [evidence, setEvidence] = useState<FoundingFeatureEvidence | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -83,12 +86,24 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
     return projection;
   }
 
+  async function readEvidence(ref: CaseReference): Promise<FoundingFeatureEvidence> {
+    // The server-owned reader must authorize this GET independently of the
+    // previously verified queue/history; no optional port grants an action.
+    if (!activeView.current || typeof session.reader.readFeatureEvidence !== "function") {
+      throw new Error("Protected founding-event evidence unavailable");
+    }
+    const raw = await session.reader.readFeatureEvidence(ref.caseId);
+    if (!activeView.current) throw new Error("Retired analyst view");
+    return parseProtectedCaseFeatureEvidence(raw, ref.caseId, ref.contextRef);
+  }
+
   // Queue refresh and case selection are hard display/action boundaries.
   // Preserve uncertainWrites: an ambiguous POST must remain blocked even when
   // the queue is reloaded or the case is selected again.
   function clearOpenedCase() {
     setReference(null);
     setHistory(null);
+    setEvidence(null);
     setAssignee("");
     setDisposition("confirmed_fraud");
   }
@@ -97,6 +112,7 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
     void run(async () => {
       setQueue(null);
       setSelected("");
+      setEvidence(null);
       // A 503 may follow a committed disposition: the disposed case is no
       // longer in the open queue. Preserve only its same-session retry handle.
       if (history !== null || reference === null) clearOpenedCase();
@@ -106,6 +122,7 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
       setSelected(projection.items[0]?.case_id ?? "");
     }, (reason) => {
       setHistory(null);
+      setEvidence(null);
       // Unavailable reads cannot authorize writes, but must not strand a
       // previously validated disposed case outside the open queue.
       if (!transientReadFailure(reason)) setReference(null);
@@ -117,25 +134,32 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
     if (!queue || !selected) return;
     void run(async () => {
       setHistory(null);
+      setEvidence(null);
       setReference(null);
       const candidate = parseLinkedCaseHistory(
         queue, await session.reader.readHistory(selected), selected, LIMIT,
       );
       if (!activeView.current) return;
-      setReference({
+      const ref = {
         caseId: selected,
         sourceEventId: candidate.selectedCase.source_event_id,
         contextRef: candidate.selectedCase.source_context_ref,
-      });
+      };
+      // Retain only a verified history retry handle on a transient feature
+      // outage; it never grants evidence display or a mutation.
+      setReference(ref);
+      const verifiedEvidence = await readEvidence(ref);
+      if (!activeView.current) return;
       setHistory(candidate.history);
+      setEvidence(verifiedEvidence);
       setAssignee("");
       setDisposition("confirmed_fraud");
     }, (reason) => {
-      if (accessReadFailure(reason) || transientReadFailure(reason)) {
-        setQueue(null);
-        setSelected("");
-        clearOpenedCase(); // No validated case was opened by this request.
-      }
+      setHistory(null);
+      setEvidence(null);
+      setQueue(null);
+      setSelected("");
+      if (!transientReadFailure(reason)) clearOpenedCase();
       setError(readError(reason));
     });
   }
@@ -144,9 +168,16 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
     if (!reference) return;
     void run(async () => {
       setHistory(null);
+      setEvidence(null);
       const projection = await readHistory(reference);
-      if (activeView.current) setHistory(projection);
+      if (!activeView.current) return;
+      const verifiedEvidence = await readEvidence(reference);
+      if (activeView.current) {
+        setHistory(projection);
+        setEvidence(verifiedEvidence);
+      }
     }, (reason) => {
+      setEvidence(null);
       // A denied, malformed or unverified history purges every identifier.
       // Only a 503 keeps the already validated, same-epoch reference; history
       // is cleared before the read and therefore no action is available.
@@ -158,7 +189,7 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
   }
 
   function submit(proposal: CaseTransitionProposal) {
-    if (!history || !reference || writesPaused || !session.writer) return;
+    if (!history || !evidence || !reference || writesPaused || !session.writer) return;
     const writer = session.writer;
     const { caseId } = reference;
     const priorRevision = history.events.length;
@@ -167,6 +198,7 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
     }
     void run(async () => {
       setHistory(null);
+      setEvidence(null);
       setQueue(null);
       setSelected("");
       const receipt = await writer.submit(
@@ -194,7 +226,11 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
         if (event?.operation !== receipt.operation || event?.disposition !== receipt.disposition) {
           throw new Error("Missing recorded case action");
         }
-        if (activeView.current) setHistory(updated);
+        const verifiedEvidence = await readEvidence(reference);
+        if (activeView.current) {
+          setHistory(updated);
+          setEvidence(verifiedEvidence);
+        }
       } catch (reason: unknown) {
         if (activeView.current) {
           // A validated write receipt is not proof that the session can still
@@ -208,7 +244,12 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
             if (accessReadFailure(reason)) clearOpenedCase();
             setError(readError(reason));
           } else {
-            setNotice("Action acknowledged. Refresh case history before continuing.");
+            // Malformed post-write history/evidence is terminal, not a
+            // successful acknowledgment or permission to reuse the handle.
+            setQueue(null);
+            setSelected("");
+            clearOpenedCase();
+            setError(readError(reason));
           }
         }
         return;
@@ -230,7 +271,8 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
   }
 
   const latest = history?.events.at(-1);
-  const canWrite = typeof session.writer?.submit === "function";
+  const hasWriter = typeof session.writer?.submit === "function";
+  const canWrite = hasWriter && evidence !== null;
   const uncertainRevision = reference ? uncertainWrites.get(reference.caseId) : undefined;
   const writesPaused = uncertainRevision !== undefined && (latest?.revision ?? 0) <= uncertainRevision;
   return (
@@ -270,7 +312,8 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
         </div>
       )}
       {history && <CaseHistoryPanel history={history} />}
-      {canWrite && writesPaused && <p role="status">Case actions are paused until a newer revision appears in case history.</p>}
+      {history && evidence && <FoundingEvidencePanel evidence={evidence} />}
+      {hasWriter && writesPaused && <p role="status">Case actions are paused until a newer revision appears in case history.</p>}
       {canWrite && latest && latest.operation !== "reconcile" && !writesPaused && (
         <section aria-label="Case actions" className="analyst-lab-actions">
           {latest.operation === "create" && (
