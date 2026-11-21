@@ -283,6 +283,17 @@ run("UC-02 recovered worker → real PG/FastAPI/Vite/React → disposition, feed
     await click(rootHost, "Assign case");
     await awaitAction(rootHost, "Record disposition");
     expect(rootHost.textContent).toContain("Revision 3: assign");
+    // This invented anomaly has no verified fraud label. Use the real React
+    // disposition control, rather than injecting a test-only HTTP shortcut.
+    const dispositionSelect = [...rootHost.querySelectorAll("select")].find(
+      (element) => element.closest("label")?.textContent?.includes("Disposition"),
+    ) as HTMLSelectElement | undefined;
+    expect(dispositionSelect).toBeTruthy();
+    await act(async () => {
+      dispositionSelect!.value = "unresolved";
+      dispositionSelect!.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(dispositionSelect!.value).toBe("unresolved");
     await click(rootHost, "Record disposition");
     await awaitAction(rootHost, "Reconcile feedback");
     expect(rootHost.textContent).toContain("Revision 4: dispose");
@@ -337,7 +348,7 @@ run("UC-02 recovered worker → real PG/FastAPI/Vite/React → disposition, feed
     process.stdout.write(
       "SYNTHETIC_MVE_PASS scenario=UC-02 http=Vite+FastAPI postgres=real " +
       "alerts=2 case_events=5 browser_posts=4 replay_duplicate=0 " +
-      "bank_execution=unknown enforcement_activated=false\n",
+      "disposition=unresolved bank_execution=unknown enforcement_activated=false\n",
     );
   } finally {
     await act(async () => root.unmount());

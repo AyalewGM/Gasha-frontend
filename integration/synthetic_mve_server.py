@@ -195,10 +195,15 @@ def seed(path: Path, scenario: str) -> None:
             "backend_sha": os.environ.get("GASHA_MVE_BACKEND_SHA", "unknown"),
             "initial_alerts": 2,
         }
-        path.write_text(json.dumps(manifest))
-        path.chmod(0o600)
+        # Establish 0600 at exclusive creation, BEFORE writing test tokens.
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as private_file:
+            json.dump(manifest, private_file)
+        if path.stat().st_mode & 0o777 != 0o600:
+            raise RuntimeError("synthetic credential manifest has unsafe file mode")
         print("SYNTHETIC_SEED_OK alerts=2 founding_cases=1 pending=0", flush=True)
     except BaseException:
+        path.unlink(missing_ok=True)
         drop(name)
         raise
 
@@ -377,7 +382,17 @@ def verify(manifest: dict[str, str]) -> None:
               failure_codes.get(str(exc), "OTHER"), flush=True)
         raise
     print("SYNTHETIC_INTERNAL_AFTER_AGGREGATION", flush=True)
-    assert summary["counts"]["confirmed_fraud"] == 1, "metrics_confirmed_fraud"
+    # Unresolved is the only justified disposition for this unlabelled fixture.
+    # Re-read revision 4 directly: no test-only fake response or write.
+    with connect(name) as db:
+        disposition = db.execute(
+            "SELECT event_json->>'disposition' AS label "
+            "FROM analyst_case_events WHERE revision=4"
+        ).fetchone()
+    assert disposition and disposition["label"] == "unresolved", "metrics_disposition"
+    assert summary["counts"]["unresolved"] == 1, "metrics_unresolved"
+    assert summary["counts"]["confirmed_fraud"] == 0, "metrics_confirmed_fraud"
+    assert summary["counts"]["confirmed_legitimate"] == 0, "metrics_confirmed_legitimate"
     assert summary["counts"]["reconciled"] == 1, "metrics_reconciled"
     assert summary["counts"]["feedback_pending"] == 0, "metrics_feedback_pending"
     assert summary["counts"]["open_investigations"] == 0, "metrics_open"
@@ -387,8 +402,8 @@ def verify(manifest: dict[str, str]) -> None:
     assert summary["enforcement_activated"] is False, "metrics_enforcement"
     print(
         "SYNTHETIC_VERIFY_OK alerts=2 founding_cases=1 "
-        "case_revisions=5 pending=0 enforcement_activated=false "
-        "bank_execution=unknown",
+        "case_revisions=5 pending=0 disposition=unresolved "
+        "enforcement_activated=false bank_execution=unknown",
         flush=True,
     )
 
