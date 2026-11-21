@@ -138,7 +138,10 @@ it("reaches queue → history → evidence through the real loopback proxy and u
     }
     await click("Open synthetic session");
     await click("Refresh queue");
+    expect(requests, "the actual Vite proxy must reach the loopback backend; UI=" + host.textContent)
+      .toEqual(["GET " + API + "queue?limit=25"]);
     expect(host.textContent).not.toContain("Triage case");
+    expect(host.textContent).toContain("Open case");
     await click("Open case");
     expect(requests).toEqual([
       "GET " + API + "queue?limit=25",
