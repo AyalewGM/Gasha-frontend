@@ -273,3 +273,55 @@ it("serializes a delayed POST before refresh and never restores old actions afte
   expect(host.querySelector('[aria-label="Case actions"]')).toBeNull();
   expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
 });
+
+it("keeps a disposed case retry-only after fetch loses the connection; an empty queue cannot strand it", async () => {
+  const assignee = "b".repeat(64);
+  const assigned = [
+    INITIAL,
+    { ...INITIAL, revision: 2, previous_revision: 1, operation: "triage",
+      reason_code: "analyst_triage" },
+    { ...INITIAL, revision: 3, previous_revision: 2, operation: "assign",
+      reason_code: "investigation_assigned", assignee_ref: assignee },
+  ];
+  const disposed = [...assigned, {
+    ...INITIAL, revision: 4, previous_revision: 3, operation: "dispose",
+    reason_code: "fraud_evidence", disposition: "confirmed_fraud", assignee_ref: assignee,
+  }];
+  const initialQueue = queue();
+  const fetchMock = vi.spyOn(globalThis, "fetch")
+    .mockResolvedValueOnce(json({
+      ...initialQueue,
+      items: [{ ...initialQueue.items[0], status: "assign", revision: 3,
+        assignee_ref: assignee }],
+    }))
+    .mockResolvedValueOnce(json({ case_id: CASE, enforcement_activated: false, events: assigned }))
+    .mockResolvedValueOnce(json({
+      case_id: CASE, source_event_id: SOURCE, revision: 4, operation: "dispose",
+      disposition: "confirmed_fraud", bank_execution: "unknown", enforcement_activated: false,
+    }))
+    .mockRejectedValueOnce(new TypeError("synthetic confidential connection failure"))
+    .mockResolvedValueOnce(json({ ...initialQueue, items: [] }))
+    .mockResolvedValueOnce(json({ case_id: CASE, enforcement_activated: false, events: disposed }));
+  const log = vi.spyOn(console, "log");
+  try {
+    await enterSession();
+    await click("Refresh queue");
+    await click("Open case");
+    expect(host.textContent).toContain("Revision 3: assign");
+    await click("Record disposition");
+    expect(host.textContent).not.toContain("Revision 3: assign");
+    expect(host.querySelector('[aria-label="Case actions"]')).toBeNull();
+    expect(host.textContent).toContain("Refresh case history");
+    expect(host.textContent).not.toContain("confidential");
+    await click("Refresh queue");
+    expect(host.textContent).toContain("Open cases on this page: 0");
+    expect(host.textContent).toContain("Refresh case history");
+    await click("Refresh case history");
+    expect(host.textContent).toContain("Revision 4: dispose");
+    expect(host.textContent).toContain("Reconcile feedback");
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+    expect(log).not.toHaveBeenCalled();
+  } finally {
+    log.mockRestore();
+  }
+});
