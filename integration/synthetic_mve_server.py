@@ -22,6 +22,7 @@ sys.path[:0] = [str(BACKEND / "tests"), str(BACKEND / "src")]
 
 import psycopg
 from psycopg import sql
+from psycopg.conninfo import conninfo_to_dict
 
 import test_postgres_evaluation_alerts as alerts
 import test_postgres_synthetic_fraud_workflow as workflow
@@ -53,6 +54,24 @@ from gasha.orchestration import ShadowOrchestrator
 from gasha.postgres_evaluations import PostgresEvaluationPersistence, PostgresShadowEvaluationRepository
 from gasha.security.access import Capability, CredentialRejected
 from gasha.security.postgres_audit import PostgresSecurityAuditSink
+
+
+def require_disposable_db() -> None:
+    """Refuse non-loopback or unrecognized database targets before any SQL."""
+    dsn = os.environ.get("GASHA_TEST_POSTGRES_DSN")
+    if not dsn:
+        raise RuntimeError("disposable PostgreSQL connection required")
+    try:
+        target = conninfo_to_dict(dsn)
+    except Exception as exc:
+        raise RuntimeError("invalid disposable PostgreSQL target") from exc
+    database = target.get("dbname", "")
+    if (
+        target.get("host") not in {"127.0.0.1", "localhost", "::1"}
+        or not (database == "gasha_test" or database.startswith("gasha_mve_"))
+        or target.get("hostaddr", "") not in {"", "127.0.0.1", "::1"}
+    ):
+        raise RuntimeError("refusing non-loopback or non-disposable PostgreSQL target")
 
 
 def settings(path: Path) -> dict[str, str]:
@@ -327,6 +346,7 @@ def main() -> None:
     cli.add_argument("--scenario", default="uc02")
     cli.add_argument("--port", type=int, default=8000)
     args = cli.parse_args()
+    require_disposable_db()
     if args.action == "seed":
         seed(args.manifest, args.scenario)
     else:
