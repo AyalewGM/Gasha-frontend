@@ -68,7 +68,8 @@ function python(action: string): void {
     // stderr, connection URLs, synthetic bearer tokens or DB record values.
     const stage = result.stdout?.match(/SYNTHETIC_INTERNAL_[A-Z_]+/g)?.at(-1)
       ?? "SYNTHETIC_INTERNAL_SETUP";
-    const reason = result.stderr?.match(/AssertionError: (metrics_[a-z_]+)/)?.[1]
+    const reason = result.stdout?.match(/SYNTHETIC_INTERNAL_CAUSE_[A-Z_]+/)?.[0]
+      ?? result.stderr?.match(/AssertionError: (metrics_[a-z_]+)/)?.[1]
       ?? result.stderr?.match(/(?:CaseMetricsRejected|TypeError|ValueError|AssertionError)/)?.[0]
       ?? "unclassified";
     throw new Error("Disposable synthetic PostgreSQL fixture step failed: " +
