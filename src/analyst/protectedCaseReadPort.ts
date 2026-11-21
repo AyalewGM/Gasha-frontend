@@ -68,5 +68,13 @@ export function createProtectedCaseReadPort(
       }
       return read(`${base}/${caseId}/history`);
     },
+    async readFeatureEvidence(caseId: string) {
+      if (!isCaseIdentifier(caseId)) {
+        throw new ProtectedCaseReadFailure();
+      }
+      // The tenant and case path originate from the verified session port,
+      // never evidence attributes, browser headers or an analyst input URL.
+      return read(`${base}/${caseId}/feature-evidence`);
+    },
   });
 }

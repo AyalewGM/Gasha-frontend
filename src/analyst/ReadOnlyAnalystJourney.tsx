@@ -15,6 +15,12 @@ import { parseLinkedCaseHistory, type LinkedCaseProjection } from "./caseQueueHi
 export interface ProtectedCaseReadPort {
   readQueue(limit: number): Promise<unknown>;
   readHistory(caseId: string): Promise<unknown>;
+  /**
+   * Inactive until the separately reviewed evidence UI gate is installed.
+   * Optional during this bounded transport/decoder increment so legacy
+   * injected read-only host fixtures never acquire silent evidence authority.
+   */
+  readFeatureEvidence?(caseId: string): Promise<unknown>;
 }
 
 const LIMIT = 25;
