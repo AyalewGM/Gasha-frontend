@@ -214,4 +214,93 @@ describe("dev and preview API proxy configuration", () => {
     }
   });
 
+
+  it("restricts founding-feature GET to the exact loopback synthetic lab boundary", async () => {
+    temp = mkdtempSync(join(tmpdir(), "gasha-lab-evidence-boundary-"));
+    writeFileSync(join(temp, ".env.gasha_test"),
+      "VITE_GASHA_ANALYST_PHASE_A=true\nVITE_GASHA_ANALYST_SYNTHETIC_LAB=true\n");
+    process.chdir(temp);
+    const loaded = await loadConfigFromFile(
+      { command: "serve", mode: "gasha_test" },
+      resolve(originalCwd, "vite.config.ts"),
+    );
+    expect(loaded).not.toBeNull();
+    const config = loaded!.config;
+    expect(Object.keys(config.server?.proxy ?? {})).toEqual(["/__gasha_analyst_lab"]);
+    expect(config.preview?.proxy).toEqual({});
+    const plugin = (config.plugins as Plugin[]).find((item) =>
+      item.name === "synthetic-analyst-loopback-boundary");
+    expect(plugin).toBeDefined();
+    const use = vi.fn();
+    const configure = plugin!.configureServer;
+    if (typeof configure !== "function") throw new Error("Missing synthetic analyst boundary");
+    configure.call(
+      {} as ThisParameterType<typeof configure>,
+      { middlewares: { use } } as unknown as ViteDevServer,
+    );
+    const handle = use.mock.calls[0][0];
+    const caseId = "00000000-0000-4000-8000-000000000041";
+    const root = "/__gasha_analyst_lab/v1/tenants/tenant-a/cases/";
+    const feature = root + caseId + "/feature-evidence";
+    function dispatch(
+      path: string,
+      method = "GET",
+      headers: Record<string, string> = {},
+      host = "127.0.0.1:5173",
+      remoteAddress = "127.0.0.1",
+    ) {
+      const next = vi.fn();
+      const end = vi.fn();
+      const writeHead = vi.fn().mockReturnValue({ end });
+      handle({
+        url: path, method, headers: {
+          host, authorization: "Bearer synthetic-test", ...headers,
+        }, socket: { remoteAddress },
+      }, { writeHead }, next);
+      return { next, writeHead, end };
+    }
+    for (const path of [
+      root + "queue?limit=1", root + "queue?limit=100",
+      root + caseId + "/history", feature,
+    ]) {
+      const forwarded = dispatch(path, "GET", { origin: "http://127.0.0.1:5173" });
+      expect(forwarded.next, path).toHaveBeenCalledOnce();
+      expect(forwarded.writeHead, path).not.toHaveBeenCalled();
+    }
+    // Neither a tenant or operation extension nor a query/canonicalization
+    // variant may extend the offline synthetic-only proxy's authority.
+    const deniedPaths = [
+      "/api/v1/tenants/tenant-a/cases/" + caseId + "/feature-evidence",
+      "/__gasha_analyst_lab/v1/tenants/tenant-b/cases/" + caseId + "/feature-evidence",
+      root + "queue?limit=0", root + "queue?limit=101",
+      feature + "?limit=25", feature + "/", feature + "?tenant_id=tenant-b",
+      root + caseId + "/%66eature-evidence",
+      root + caseId + "/feature%2devidence",
+      root + caseId + "/feature-evidence%2f",
+      root + caseId.toUpperCase() + "/feature-evidence",
+      root + "not-a-uuid/feature-evidence",
+    ];
+    for (const path of deniedPaths) {
+      const denied = dispatch(path);
+      expect(denied.next, path).not.toHaveBeenCalled();
+      expect(denied.writeHead, path).toHaveBeenCalledWith(403, { "Cache-Control": "no-store" });
+      expect(denied.end, path).toHaveBeenCalledOnce();
+    }
+    const deniedRequests: Array<[string, string, Record<string, string>, string?, string?]> = [
+      [feature, "POST", { origin: "http://127.0.0.1:5173", "content-type": "application/json" }],
+      [feature, "PUT", {}],
+      [feature, "GET", { authorization: "" }],
+      [feature, "GET", { authorization: "Bearer invalid.token" }],
+      [feature, "GET", { cookie: "bank-session=do-not-forward" }],
+      [feature, "GET", { origin: "https://bank.example" }],
+      [feature, "GET", {}, "bank.example", "127.0.0.1"],
+      [feature, "GET", {}, "localhost.bank.example", "127.0.0.1"],
+      [feature, "GET", {}, "127.0.0.1:5173", "192.0.2.10"],
+    ];
+    for (const [path, method, headers, host, peer] of deniedRequests) {
+      const denied = dispatch(path, method, headers, host, peer);
+      expect(denied.next).not.toHaveBeenCalled();
+      expect(denied.writeHead).toHaveBeenCalledWith(403, { "Cache-Control": "no-store" });
+    }
+  });
 });
