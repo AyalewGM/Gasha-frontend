@@ -290,10 +290,10 @@ def verify(manifest: dict[str, str]) -> None:
         rows = db.execute(
             "SELECT event_json FROM analyst_case_events ORDER BY revision"
         ).fetchall()
-        operations = [json.loads(row["event_json"])["operation"] for row in rows]
+        operations = [row["event_json"]["operation"] for row in rows]
         assert operations == ["create", "triage", "assign", "dispose", "reconcile"]
         assert all(
-            json.loads(row["event_json"])["bank_execution"] == "unknown"
+            row["event_json"]["bank_execution"] == "unknown"
             for row in rows
         )
         rows = db.execute(
