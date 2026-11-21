@@ -7,14 +7,17 @@ describe("injected protected case reads", () => {
   it("uses only tenant-bound relative paths for queue and history", async () => {
     const get = vi.fn()
       .mockResolvedValueOnce({ status: 200, payload: { items: [] } })
-      .mockResolvedValueOnce({ status: 200, payload: { case_id: CASE } });
+      .mockResolvedValueOnce({ status: 200, payload: { case_id: CASE } })
+      .mockResolvedValueOnce({ status: 200, payload: { evidence: "synthetic" } });
     const port = createProtectedCaseReadPort("synthetic-a", get);
     expect(get).not.toHaveBeenCalled();
     await expect(port.readQueue(25)).resolves.toEqual({ items: [] });
     await expect(port.readHistory(CASE)).resolves.toEqual({ case_id: CASE });
+    await expect(port.readFeatureEvidence!(CASE)).resolves.toEqual({ evidence: "synthetic" });
     expect(get.mock.calls).toEqual([
       ["/v1/tenants/synthetic-a/cases/queue?limit=25"],
       [`/v1/tenants/synthetic-a/cases/${CASE}/history`],
+      [`/v1/tenants/synthetic-a/cases/${CASE}/feature-evidence`],
     ]);
   });
 
@@ -29,6 +32,7 @@ describe("injected protected case reads", () => {
     }
     for (const caseId of ["..", `${CASE}/history`, `${CASE}?tenant=tenant-b`, `${CASE}\n`, CASE.toUpperCase()]) {
       await expect(port.readHistory(caseId)).rejects.toThrow("Protected case read unavailable");
+      await expect(port.readFeatureEvidence!(caseId)).rejects.toThrow("Protected case read unavailable");
     }
     expect(get).not.toHaveBeenCalled();
   });
@@ -63,6 +67,7 @@ describe("injected protected case reads", () => {
     completeQueue({ status: 200, payload: { items: [] } });
     await expect(pending).rejects.toMatchObject({ status: 401 });
     await expect(port.readQueue(25)).rejects.toMatchObject({ status: 401 });
+    await expect(port.readFeatureEvidence!(CASE)).rejects.toMatchObject({ status: 401 });
     expect(get).toHaveBeenCalledTimes(2);
   });
 });
