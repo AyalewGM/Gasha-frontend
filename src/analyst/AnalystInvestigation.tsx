@@ -21,9 +21,13 @@ export interface AnalystInvestigationSession {
   readonly writer?: ProtectedCaseWritePort;
 }
 
-function terminalReadFailure(error: unknown): boolean {
+function accessReadFailure(error: unknown): boolean {
   const status = typeof error === "object" && error !== null && "status" in error ? error.status : null;
-  return status === 401 || status === 403 || status === 404 || status === 503;
+  return status === 401 || status === 403 || status === 404;
+}
+
+function transientReadFailure(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "status" in error && error.status === 503;
 }
 
 function readError(error: unknown): string {
@@ -93,14 +97,18 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
     void run(async () => {
       setQueue(null);
       setSelected("");
-      clearOpenedCase();
+      // A 503 may follow a committed disposition: the disposed case is no
+      // longer in the open queue. Preserve only its same-session retry handle.
+      if (history !== null || reference === null) clearOpenedCase();
       const projection = parseProtectedCaseQueue(await session.reader.readQueue(LIMIT), LIMIT);
       if (!activeView.current) return;
       setQueue(projection);
       setSelected(projection.items[0]?.case_id ?? "");
     }, (reason) => {
       setHistory(null);
-      setReference(null);
+      // Unavailable reads cannot authorize writes, but must not strand a
+      // previously validated disposed case outside the open queue.
+      if (!transientReadFailure(reason)) setReference(null);
       setError(readError(reason));
     });
   }
@@ -123,10 +131,10 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
       setAssignee("");
       setDisposition("confirmed_fraud");
     }, (reason) => {
-      if (terminalReadFailure(reason)) {
+      if (accessReadFailure(reason) || transientReadFailure(reason)) {
         setQueue(null);
         setSelected("");
-        clearOpenedCase();
+        clearOpenedCase(); // No validated case was opened by this request.
       }
       setError(readError(reason));
     });
@@ -139,11 +147,12 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
       const projection = await readHistory(reference);
       if (activeView.current) setHistory(projection);
     }, (reason) => {
-      if (terminalReadFailure(reason)) {
-        setQueue(null);
-        setSelected("");
-        clearOpenedCase();
-      }
+      // A denied, malformed or unverified history purges every identifier.
+      // Only a 503 keeps the already validated, same-epoch reference; history
+      // is cleared before the read and therefore no action is available.
+      setQueue(null);
+      setSelected("");
+      if (!transientReadFailure(reason)) clearOpenedCase();
       setError(readError(reason));
     });
   }
@@ -192,10 +201,11 @@ export function AnalystInvestigation({ session }: { readonly session: AnalystInv
           // read this case. Keep the revision fence, but discard identifiers
           // and controls immediately on a terminal authorization/read failure.
           requireAdvancingHistory();
-          if (terminalReadFailure(reason)) {
+          if (accessReadFailure(reason) || transientReadFailure(reason)) {
             setQueue(null);
             setSelected("");
-            clearOpenedCase();
+            // 503 is retry-only; 401/403/404 revoke the case handle.
+            if (accessReadFailure(reason)) clearOpenedCase();
             setError(readError(reason));
           } else {
             setNotice("Action acknowledged. Refresh case history before continuing.");
