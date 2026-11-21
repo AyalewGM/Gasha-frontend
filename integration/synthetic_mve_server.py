@@ -358,8 +358,8 @@ def verify(manifest: dict[str, str]) -> None:
             tenant_id=TENANT, histories=(history,), as_of=clock_at,
             alert_clocks=(SyntheticAlertClock(
                 TENANT, UUID(manifest["case"]), UUID(manifest["source_event"]),
-                source_record.event.canonical_transaction.occurred_at,
-                source_alert["generated_at"],
+                source_record.event.canonical_transaction.occurred_at.astimezone(UTC),
+                source_alert["generated_at"].astimezone(UTC),
             ),),
         )
     except CaseMetricsRejected as exc:
