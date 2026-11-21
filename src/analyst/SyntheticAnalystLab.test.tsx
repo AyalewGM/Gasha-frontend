@@ -285,7 +285,7 @@ it("keeps a disposed case retry-only after fetch loses the connection; an empty 
   ];
   const disposed = [...assigned, {
     ...INITIAL, revision: 4, previous_revision: 3, operation: "dispose",
-    reason_code: "fraud_evidence", disposition: "confirmed_fraud", assignee_ref: assignee,
+    reason_code: "fraud_evidence", disposition: "confirmed_fraud",
   }];
   const initialQueue = queue();
   const fetchMock = vi.spyOn(globalThis, "fetch")
