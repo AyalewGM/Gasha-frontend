@@ -38,7 +38,9 @@ from test_postgres_shadow_feature_recovery import (
 
 from gasha.api.main import app
 from gasha.cases.evaluation_alerts import PostgresEvaluationAlertWriter, evaluation_context_ref
+from gasha.cases.metrics import SyntheticAlertClock, summarize_synthetic_case_metrics
 from gasha.cases.postgres_feature_view import ExplicitPostgresCaseFeatureReader
+from gasha.cases.postgres_timeline import PostgresCaseTimelineService
 from gasha.cases.postgres_history_reader import ExplicitPostgresCaseHistoryReader
 from gasha.cases.postgres_queue_reader import ExplicitPostgresCaseQueueReader
 from gasha.cases.postgres_writer_bridge import ExplicitPostgresCaseTransitionWriter
@@ -329,6 +331,41 @@ def verify(manifest: dict[str, str]) -> None:
             TENANT not in str(r)
             for r in rows
         )
+    # KPI-like engineering evidence is computed from re-read durable synthetic
+    # history and recorded source/alert clocks, never Bank data or labels.
+    clock_at = datetime.now(UTC)
+    with connect(name) as db:
+        history = PostgresCaseTimelineService(db).history(
+            principal=principal(caps=CAPABILITIES | {Capability.CASE_READ}),
+            tenant_id=TENANT, case_id=UUID(manifest["case"]), at=clock_at,
+        )
+    with connect(name) as db:
+        source_alert = db.execute(
+            "SELECT event_id, generated_at FROM evaluation_alerts "
+            "WHERE tenant_id=%s AND event_id=%s",
+            (TENANT, manifest["source_event"]),
+        ).fetchone()
+        assert source_alert is not None
+        source_record = PostgresShadowEvaluationRepository(
+            db, tenant_ids=(TENANT,),
+        ).get(TENANT, UUID(manifest["source_event"]))
+        assert source_record is not None
+    summary = summarize_synthetic_case_metrics(
+        tenant_id=TENANT, histories=(history,), as_of=clock_at,
+        alert_clocks=(SyntheticAlertClock(
+            TENANT, UUID(manifest["case"]), UUID(manifest["source_event"]),
+            source_record.event.canonical_transaction.occurred_at,
+            source_alert["generated_at"],
+        ),),
+    )
+    assert summary["counts"]["confirmed_fraud"] == 1
+    assert summary["counts"]["reconciled"] == 1
+    assert summary["counts"]["feedback_pending"] == 0
+    assert summary["counts"]["open_investigations"] == 0
+    assert summary["alert_latency"]["count"] == 1
+    assert summary["investigation_turnaround"]["count"] == 1
+    assert summary["bank_operational_kpi_authorized"] is False
+    assert summary["enforcement_activated"] is False
     print(
         "SYNTHETIC_VERIFY_OK alerts=2 founding_cases=1 "
         "case_revisions=5 pending=0 enforcement_activated=false "
