@@ -138,11 +138,15 @@ it("reaches queue → history → evidence through the real loopback proxy and u
     }
     await click("Open synthetic session");
     await click("Refresh queue");
-    expect(requests, "the actual Vite proxy must reach the loopback backend; UI=" + host.textContent)
-      .toEqual(["GET " + API + "queue?limit=25"]);
+    // Unlike a stubbed fetch, a real HTTP roundtrip completes on later event
+    // loop turns. Await the browser view rather than asserting mid-flight.
+    await vi.waitFor(() => expect(host.textContent).toContain("Open case"), { timeout: 10000 });
+    expect(requests, "the actual Vite proxy must reach the loopback backend").toEqual([
+      "GET " + API + "queue?limit=25",
+    ]);
     expect(host.textContent).not.toContain("Triage case");
-    expect(host.textContent).toContain("Open case");
     await click("Open case");
+    await vi.waitFor(() => expect(host.textContent).toContain("Triage case"), { timeout: 10000 });
     expect(requests).toEqual([
       "GET " + API + "queue?limit=25",
       "GET " + API + CASE + "/history",
