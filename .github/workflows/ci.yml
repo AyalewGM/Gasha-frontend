@@ -69,3 +69,12 @@ jobs:
           GASHA_MVE_BACKEND_SHA: 7e3e4370ca168c935da5ecb6cb7d9dc96ad377a6
           GASHA_TEST_POSTGRES_DSN: postgresql://postgres:postgres@127.0.0.1:5432/gasha_test
         run: npm run test:mve
+      - name: Real Chromium UC-02 analyst browser + durable PostgreSQL evidence
+        env:
+          GASHA_CROSS_REPO_MVE: "true"
+          GASHA_MVE_BACKEND: backend
+          GASHA_MVE_BACKEND_SHA: 7e3e4370ca168c935da5ecb6cb7d9dc96ad377a6
+          GASHA_TEST_POSTGRES_DSN: postgresql://postgres:postgres@127.0.0.1:5432/gasha_test
+        run: |
+          node --check integration/synthetic_chromium_e2e.mjs
+          node integration/synthetic_chromium_e2e.mjs

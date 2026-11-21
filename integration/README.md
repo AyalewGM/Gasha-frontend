@@ -24,3 +24,29 @@ The test checks five append-only case revisions, idempotent duplicate POST, reda
 - No payment hold/block/settlement is requested or executed. All case events carry bank_execution=unknown and enforcement_activated=false.
 - Inputs are invented and credentials are never printed. The page counts are not Bank KPIs, precision/recall, incumbent comparison or acceptance.
 - Independent exact-head PO, Security/Architecture and QA review is required before Unified Engineering Lead integration. npm advisories are a separate gate.
+
+## Genuine Chromium browser proof (opt-in, synthetic only)
+
+CI additionally runs Node 22 command: node integration/synthetic_chromium_e2e.mjs
+after the React/jsdom MVE with the same disposable PostgreSQL service and pinned backend.
+For local execution, reuse the environment and installation steps above, with
+a local Chrome/Chromium binary (CHROME_BIN may select it). The script fails
+rather than skipping when Chromium is unavailable.
+
+The runner seeds a separate invented UC-02 schema, launches actual headless
+Chromium against loopback Vite/FastAPI, and drives the React /analyst page
+through queue -> founding evidence/history -> triage -> assignment -> explicit
+unresolved disposition -> feedback reconciliation. It verifies PostgreSQL
+revisions and redacted audit, real HTTP 401/403/foreign-tenant 404, proxy
+method/origin/cookie denial, revoked-token UX, local logout/data clearing,
+and audit-outage 503. The browser uses native CDP pointer/keyboard commands;
+the test does not mock network responses or instantiate React through jsdom.
+It does not print tokens, payloads, DSNs, backend logs or Chromium console.
+
+This is NOT installed-session/Bank identity, BFF, bank-approved CSRF,
+revocation service, operational KPI or payment/Bank activation evidence.
+Uncertain write/stale request and rotation protections remain separately
+tested in frontend unit/jsdom suites; the genuine-browser proof does not
+yet exercise a real installed IdP session rotation. It does not close backend
+#148/#142 or release security review. Chromium availability and exact-head
+CI plus independent PO, Security and QA review remain mandatory.
