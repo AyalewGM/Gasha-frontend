@@ -292,7 +292,7 @@ it("completes the synthetic queue → immutable case → triage/assign/dispose/c
       reason_code: "investigation_assigned", assignee_ref: "b".repeat(64),
       recorded_at: "2026-11-07T10:02:00.000001Z" },
     { ...created, revision: 4, previous_revision: 3, operation: "dispose",
-      reason_code: "fraud_evidence", disposition: "confirmed_fraud",
+      reason_code: "needs_review", disposition: "unresolved",
       recorded_at: "2026-11-07T10:03:00.000001Z" },
     { ...created, revision: 5, previous_revision: 4, operation: "correct",
       reason_code: "corrected_finding", disposition: "confirmed_legitimate",
@@ -321,6 +321,9 @@ it("completes the synthetic queue → immutable case → triage/assign/dispose/c
         ["operation", "assigneeSelector", "disposition"].includes(key))).toBe(true);
       revision += 1;
       expect(events[revision - 1].operation).toBe(proposal.operation);
+      if (proposal.disposition !== undefined) {
+        expect(events[revision - 1].disposition).toBe(proposal.disposition);
+      }
       return {
         case_id: CASE, source_event_id: SOURCE, revision,
         operation: proposal.operation,
