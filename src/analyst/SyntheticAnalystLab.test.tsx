@@ -49,8 +49,11 @@ function json(payload: unknown, status = 200) {
  * The request spy retains the real per-request path for gate assertions.
  */
 function spyLabFetch() {
-  const planned = vi.fn((_input: RequestInfo | URL, _init?: RequestInit): Promise<Response> =>
-    Promise.reject(new Error("Unexpected synthetic lab request")));
+  const planned = vi.fn((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    void input;
+    void init;
+    return Promise.reject(new Error("Unexpected synthetic lab request"));
+  });
   vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
     const url = String(input);
     if (url.endsWith("/feature-evidence")) {
