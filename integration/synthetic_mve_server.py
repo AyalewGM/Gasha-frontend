@@ -333,12 +333,14 @@ def verify(manifest: dict[str, str]) -> None:
         )
     # KPI-like engineering evidence is computed from re-read durable synthetic
     # history and recorded source/alert clocks, never Bank data or labels.
+    print("SYNTHETIC_INTERNAL_BEFORE_HISTORY", flush=True)
     clock_at = datetime.now(UTC)
     with connect(name) as db:
         history = PostgresCaseTimelineService(db).history(
             principal=principal(caps=CAPABILITIES | {Capability.CASE_READ}),
             tenant_id=TENANT, case_id=UUID(manifest["case"]), at=clock_at,
         )
+    print("SYNTHETIC_INTERNAL_AFTER_HISTORY", flush=True)
     with connect(name) as db:
         source_alert = db.execute(
             "SELECT event_id, generated_at FROM evaluation_alerts "
@@ -350,6 +352,7 @@ def verify(manifest: dict[str, str]) -> None:
             db, tenant_ids=(TENANT,),
         ).get(TENANT, UUID(manifest["source_event"]))
         assert source_record is not None
+    print("SYNTHETIC_INTERNAL_AFTER_SOURCE", flush=True)
     summary = summarize_synthetic_case_metrics(
         tenant_id=TENANT, histories=(history,), as_of=clock_at,
         alert_clocks=(SyntheticAlertClock(
@@ -358,14 +361,15 @@ def verify(manifest: dict[str, str]) -> None:
             source_alert["generated_at"],
         ),),
     )
-    assert summary["counts"]["confirmed_fraud"] == 1
-    assert summary["counts"]["reconciled"] == 1
-    assert summary["counts"]["feedback_pending"] == 0
-    assert summary["counts"]["open_investigations"] == 0
-    assert summary["alert_latency"]["count"] == 1
-    assert summary["investigation_turnaround"]["count"] == 1
-    assert summary["bank_operational_kpi_authorized"] is False
-    assert summary["enforcement_activated"] is False
+    print("SYNTHETIC_INTERNAL_AFTER_AGGREGATION", flush=True)
+    assert summary["counts"]["confirmed_fraud"] == 1, "metrics_confirmed_fraud"
+    assert summary["counts"]["reconciled"] == 1, "metrics_reconciled"
+    assert summary["counts"]["feedback_pending"] == 0, "metrics_feedback_pending"
+    assert summary["counts"]["open_investigations"] == 0, "metrics_open"
+    assert summary["alert_latency"]["count"] == 1, "metrics_alert_latency"
+    assert summary["investigation_turnaround"]["count"] == 1, "metrics_turnaround"
+    assert summary["bank_operational_kpi_authorized"] is False, "metrics_bank_authority"
+    assert summary["enforcement_activated"] is False, "metrics_enforcement"
     print(
         "SYNTHETIC_VERIFY_OK alerts=2 founding_cases=1 "
         "case_revisions=5 pending=0 enforcement_activated=false "
