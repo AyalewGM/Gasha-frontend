@@ -146,3 +146,36 @@ it("fences late successful POST responses after concurrent 401 revocation", asyn
   expect(revoked).toHaveBeenCalledTimes(1);
   expect(fetchStub).toHaveBeenCalledTimes(2);
 });
+
+it("distinguishes rejected fetch from malformed protected responses and fences uncertain writes", async () => {
+  const fetchStub = vi.fn()
+    .mockRejectedValueOnce(new TypeError("sensitive network diagnostics"))
+    .mockResolvedValueOnce(new Response("{invalid-json", {
+      status: 200, headers: { "Content-Type": "application/json" },
+    }))
+    .mockRejectedValueOnce(new TypeError("unconfirmed POST outcome"))
+    .mockResolvedValueOnce(json(401));
+  const log = vi.spyOn(console, "log");
+  const error = vi.spyOn(console, "error");
+  vi.stubGlobal("fetch", fetchStub);
+  try {
+    const revoked = vi.fn();
+    const session = createSameOriginAnalystSession(binding({ onUnauthorized: revoked }));
+    await expect(session.reader.readHistory(CASE)).rejects.toMatchObject({
+      status: 503, message: "Protected case read unavailable",
+    });
+    await expect(session.reader.readHistory(CASE)).rejects.toMatchObject({
+      status: null, message: "Protected case read unavailable",
+    });
+    await expect(session.writer.submit(CASE, history, { operation: "triage" }, "b".repeat(32)))
+      .rejects.toMatchObject({ kind: "outcome_unknown" });
+    await expect(session.reader.readHistory(CASE)).rejects.toMatchObject({ status: 401 });
+    expect(revoked).toHaveBeenCalledTimes(1);
+    expect(fetchStub).toHaveBeenCalledTimes(4);
+    expect(log).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
+  } finally {
+    log.mockRestore();
+    error.mockRestore();
+  }
+});

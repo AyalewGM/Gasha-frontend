@@ -84,16 +84,24 @@ export function createSameOriginAnalystSession(
 
     // Paths are constructed and validated by the existing tenant-bound ports.
     // This fetch can only target the current origin, never a caller URL.
-    const response = await fetch(path, {
-      method: write ? "POST" : "GET",
-      headers,
-      body: write ? JSON.stringify(body) : undefined,
-      credentials: "same-origin",
-      mode: "same-origin",
-      cache: "no-store",
-      redirect: "error",
-      referrerPolicy: "no-referrer",
-    });
+    let response: Response;
+    try {
+      response = await fetch(path, {
+        method: write ? "POST" : "GET",
+        headers,
+        body: write ? JSON.stringify(body) : undefined,
+        credentials: "same-origin",
+        mode: "same-origin",
+        cache: "no-store",
+        redirect: "error",
+        referrerPolicy: "no-referrer",
+      });
+    } catch {
+      // No HTTP response: GET is retry-only for an already verified case,
+      // while an ambiguous POST remains fenced as outcome_unknown.
+      // Invalid JSON/content types below are not transport outages.
+      return { status: retired && !write ? 401 : 503 };
+    }
     if (response.status === 401) revoke();
     // A late mutation reply after revocation/logout is ambiguous even if it
     // was HTTP 200. The write port fences it as outcome_unknown, never ACKs.

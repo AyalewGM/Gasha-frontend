@@ -12,9 +12,17 @@ export function openSyntheticLabSession(credential: string, onUnauthorized: () =
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${credential}`);
     headers.set("Accept", "application/json");
-    const response = await fetch(PROXY + path, {
-      ...init, headers, credentials: "omit", cache: "no-store", redirect: "error",
-    });
+    let response: Response;
+    try {
+      response = await fetch(PROXY + path, {
+        ...init, headers, credentials: "omit", cache: "no-store", redirect: "error",
+      });
+    } catch {
+      // A rejected fetch has no HTTP response. A previously validated case
+      // may retain only its retry handle; no evidence or action survives.
+      // Never classify later response-body decoding failures as an outage.
+      return { status: retired ? 401 : 503 };
+    }
     if (retired) return { status: 401 };
     if (response.status === 401) {
       retired = true;
