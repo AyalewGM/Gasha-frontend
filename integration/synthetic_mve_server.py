@@ -38,7 +38,7 @@ from test_postgres_shadow_feature_recovery import (
 
 from gasha.api.main import app
 from gasha.cases.evaluation_alerts import PostgresEvaluationAlertWriter, evaluation_context_ref
-from gasha.cases.metrics import SyntheticAlertClock, summarize_synthetic_case_metrics
+from gasha.cases.metrics import CaseMetricsRejected, SyntheticAlertClock, summarize_synthetic_case_metrics
 from gasha.cases.postgres_feature_view import ExplicitPostgresCaseFeatureReader
 from gasha.cases.postgres_timeline import PostgresCaseTimelineService
 from gasha.cases.postgres_history_reader import ExplicitPostgresCaseHistoryReader
@@ -353,14 +353,29 @@ def verify(manifest: dict[str, str]) -> None:
         ).get(TENANT, UUID(manifest["source_event"]))
         assert source_record is not None
     print("SYNTHETIC_INTERNAL_AFTER_SOURCE", flush=True)
-    summary = summarize_synthetic_case_metrics(
-        tenant_id=TENANT, histories=(history,), as_of=clock_at,
-        alert_clocks=(SyntheticAlertClock(
-            TENANT, UUID(manifest["case"]), UUID(manifest["source_event"]),
-            source_record.event.canonical_transaction.occurred_at,
-            source_alert["generated_at"],
-        ),),
-    )
+    try:
+        summary = summarize_synthetic_case_metrics(
+            tenant_id=TENANT, histories=(history,), as_of=clock_at,
+            alert_clocks=(SyntheticAlertClock(
+                TENANT, UUID(manifest["case"]), UUID(manifest["source_event"]),
+                source_record.event.canonical_transaction.occurred_at,
+                source_alert["generated_at"],
+            ),),
+        )
+    except CaseMetricsRejected as exc:
+        # Emit only a constant known failure category, never data or timestamps.
+        failure_codes = {
+            "unknown, duplicate or impossible alert timing": "TIMING",
+            "alert cannot precede source event": "CLOCK_ORDER",
+            "future-dated case history": "HISTORY_CLOCK",
+            "timezone-aware trusted timestamp required": "CLOCK_TYPE",
+            "duplicate case or source evaluation": "SOURCE_REUSE",
+            "invalid duration coverage accounting": "COVERAGE",
+            "invalid synthetic metric scope or ambiguous/corrupt history": "SCOPE",
+        }
+        print("SYNTHETIC_INTERNAL_CAUSE_" +
+              failure_codes.get(str(exc), "OTHER"), flush=True)
+        raise
     print("SYNTHETIC_INTERNAL_AFTER_AGGREGATION", flush=True)
     assert summary["counts"]["confirmed_fraud"] == 1, "metrics_confirmed_fraud"
     assert summary["counts"]["reconciled"] == 1, "metrics_reconciled"
