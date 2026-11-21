@@ -117,6 +117,21 @@ it("retires both ports on revoked session; a new verified epoch is separate", as
   rotated.close();
 });
 
+it("never dispatches a POST when the host retires the session during CSRF lookup", async () => {
+  const fetchStub = vi.fn();
+  vi.stubGlobal("fetch", fetchStub);
+  let session!: ReturnType<typeof createSameOriginAnalystSession>;
+  session = createSameOriginAnalystSession(binding({
+    csrfToken: () => {
+      session.close();
+      return "fresh-csrf-token";
+    },
+  }));
+  await expect(session.writer.submit(CASE, history, { operation: "triage" }, "b".repeat(32)))
+    .rejects.toMatchObject({ kind: "session_unavailable" });
+  expect(fetchStub).not.toHaveBeenCalled();
+});
+
 it("fences late successful POST responses after concurrent 401 revocation", async () => {
   let resolvePost!: (response: Response) => void;
   const inFlight = new Promise<Response>((resolve) => { resolvePost = resolve; });

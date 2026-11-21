@@ -72,6 +72,9 @@ export function createSameOriginAnalystSession(
       } catch {
         return { status: 403 };
       }
+      // A trusted host may revoke/logout synchronously while providing the
+      // CSRF token. Never dispatch a mutation on the retired session.
+      if (retired) return { status: 401 };
       if (typeof token !== "string" || !SAFE_CSRF.test(token)) {
         return { status: 403 };
       }
