@@ -120,8 +120,7 @@ it("retires both ports on revoked session; a new verified epoch is separate", as
 it("never dispatches a POST when the host retires the session during CSRF lookup", async () => {
   const fetchStub = vi.fn();
   vi.stubGlobal("fetch", fetchStub);
-  let session!: ReturnType<typeof createSameOriginAnalystSession>;
-  session = createSameOriginAnalystSession(binding({
+  const session = createSameOriginAnalystSession(binding({
     csrfToken: () => {
       session.close();
       return "fresh-csrf-token";
