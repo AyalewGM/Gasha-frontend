@@ -9,7 +9,9 @@ import { createRoot } from "react-dom/client";
 import { createServer as createHttpServer, type Server as HttpServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { resolve } from "node:path";
-import { createServer as createViteServer, loadConfigFromFile, type ViteDevServer } from "vite";
+import type { ViteDevServer } from "vite";
+import { Buffer } from "node:buffer";
+import { TextEncoder, TextDecoder } from "node:util";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import { SyntheticAnalystLab } from "./SyntheticAnalystLab";
 import { foundingEvidence } from "./foundingEvidence.testFixtures";
@@ -50,6 +52,11 @@ const keys = [
 const previousEnv = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
 
 beforeAll(async () => {
+  // jsdom supplies different-realm typed arrays. esbuild requires its Node
+  // TextEncoder and Uint8Array to share a realm; defer Vite import until fixed.
+  const nodeUint8Array = Object.getPrototypeOf(Buffer.prototype).constructor as typeof Uint8Array;
+  Object.assign(globalThis, { Uint8Array: nodeUint8Array, TextEncoder, TextDecoder });
+  const { createServer: createViteServer, loadConfigFromFile } = await import("vite");
   backend = createHttpServer((request, response) => {
     const path = request.url ?? "";
     requests.push((request.method ?? "") + " " + path);
