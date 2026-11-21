@@ -226,8 +226,11 @@ class EvaluationDirectory:
 
 
 class LabAssignees:
+    def __init__(self, selector: UUID) -> None:
+        self.selector = selector
+
     def resolve(self, *, principal, tenant_id, selector, at):
-        if tenant_id != TENANT or tenant_id not in principal.tenant_ids or selector != ASSIGNEE:
+        if tenant_id != TENANT or tenant_id not in principal.tenant_ids or selector != self.selector:
             raise LookupError("unknown synthetic assignee")
         return AuthorizedAssignee(TENANT, principal.audit_actor)
 
@@ -253,7 +256,7 @@ def serve(manifest: dict[str, str], port: int) -> None:
     app.state.case_transition_writer = ExplicitPostgresCaseTransitionWriter(
         connections=connections,
         evaluations=EvaluationDirectory(schema),
-        assignees=LabAssignees(),
+        assignees=LabAssignees(UUID(manifest["assignee"])),
     )
     uvicorn.run(app, host="127.0.0.1", port=port, log_level="error", access_log=False)
 
