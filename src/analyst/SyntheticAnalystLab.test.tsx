@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { SyntheticAnalystLab } from "./SyntheticAnalystLab";
+import { foundingEvidence } from "./foundingEvidence.testFixtures";
 
 const CASE = "00000000-0000-4000-8000-000000000041";
 const SOURCE = "00000000-0000-4000-8000-000000000042";
@@ -42,6 +43,28 @@ function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), { status, headers: { "Content-Type": "application/json" } });
 }
 
+/**
+ * Synthetic lab HTTP fixture: only feature-evidence GETs are generated from a
+ * known synthetic envelope. Ordinary queued GET/POST responses remain explicit.
+ * The request spy retains the real per-request path for gate assertions.
+ */
+function spyLabFetch() {
+  const planned = vi.fn((input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+    void input;
+    void init;
+    return Promise.reject(new Error("Unexpected synthetic lab request"));
+  });
+  vi.spyOn(globalThis, "fetch").mockImplementation((input, init) => {
+    const url = String(input);
+    if (url.endsWith("/feature-evidence")) {
+      const caseId = url.split("/").at(-2) ?? "";
+      return Promise.resolve(json(foundingEvidence(caseId, CONTEXT)));
+    }
+    return planned(input, init);
+  });
+  return planned;
+}
+
 let host: HTMLDivElement;
 let root: Root;
 beforeEach(async () => {
@@ -74,7 +97,7 @@ async function enterSession() {
 }
 
 it("opens only user-selected synthetic cases and reloads authenticated history after a write", async () => {
-  const fetchMock = vi.spyOn(globalThis, "fetch")
+  const fetchMock = spyLabFetch()
     .mockResolvedValueOnce(json(queue()))
     .mockResolvedValueOnce(json(history()))
     .mockResolvedValueOnce(json({
@@ -106,7 +129,7 @@ it("opens only user-selected synthetic cases and reloads authenticated history a
 });
 
 it("requires a history refresh after a conflict and retires the complete session on 401", async () => {
-  const fetchMock = vi.spyOn(globalThis, "fetch")
+  const fetchMock = spyLabFetch()
     .mockResolvedValueOnce(json(queue()))
     .mockResolvedValueOnce(json(history()))
     .mockResolvedValueOnce(json({ detail: "sensitive conflict detail" }, 409))
@@ -125,7 +148,7 @@ it("requires a history refresh after a conflict and retires the complete session
 });
 
 it("blocks a fresh idempotency key while an uncertain write may still be processing", async () => {
-  const fetchMock = vi.spyOn(globalThis, "fetch")
+  const fetchMock = spyLabFetch()
     .mockResolvedValueOnce(json(queue()))
     .mockResolvedValueOnce(json(history()))
     .mockRejectedValueOnce(new Error("lost response after dispatch"))
@@ -178,7 +201,7 @@ function otherHistory() {
 }
 
 it("removes A's previously opened case and actions when a refreshed queue omits A", async () => {
-  const fetchMock = vi.spyOn(globalThis, "fetch")
+  const fetchMock = spyLabFetch()
     .mockResolvedValueOnce(json(queue()))
     .mockResolvedValueOnce(json(history()))
     .mockResolvedValueOnce(json({ ...queue(), items: [] }));
@@ -195,7 +218,7 @@ it("removes A's previously opened case and actions when a refreshed queue omits 
 });
 
 it("invalidates A's opened case when the analyst selects B, until B history is verified", async () => {
-  const fetchMock = vi.spyOn(globalThis, "fetch")
+  const fetchMock = spyLabFetch()
     .mockResolvedValueOnce(json(twoCaseQueue()))
     .mockResolvedValueOnce(json(history()))
     .mockResolvedValueOnce(json(otherHistory()));
@@ -223,7 +246,7 @@ it("invalidates A's opened case when the analyst selects B, until B history is v
 it("clears A immediately while a replacement queue GET is delayed; no stale POST can start", async () => {
   let finishQueue!: (response: Response) => void;
   const pendingQueue = new Promise<Response>((resolve) => { finishQueue = resolve; });
-  const fetchMock = vi.spyOn(globalThis, "fetch")
+  const fetchMock = spyLabFetch()
     .mockResolvedValueOnce(json(queue()))
     .mockResolvedValueOnce(json(history()))
     .mockReturnValueOnce(pendingQueue);
@@ -245,7 +268,7 @@ it("clears A immediately while a replacement queue GET is delayed; no stale POST
 it("serializes a delayed POST before refresh and never restores old actions after a B-only queue", async () => {
   let finishWrite!: (response: Response) => void;
   const pendingWrite = new Promise<Response>((resolve) => { finishWrite = resolve; });
-  const fetchMock = vi.spyOn(globalThis, "fetch")
+  const fetchMock = spyLabFetch()
     .mockResolvedValueOnce(json(queue()))
     .mockResolvedValueOnce(json(history()))
     .mockReturnValueOnce(pendingWrite)
@@ -288,7 +311,7 @@ it("keeps a disposed case retry-only after fetch loses the connection; an empty 
     reason_code: "fraud_evidence", disposition: "confirmed_fraud",
   }];
   const initialQueue = queue();
-  const fetchMock = vi.spyOn(globalThis, "fetch")
+  const fetchMock = spyLabFetch()
     .mockResolvedValueOnce(json({
       ...initialQueue,
       items: [{ ...initialQueue.items[0], status: "assign", revision: 3,

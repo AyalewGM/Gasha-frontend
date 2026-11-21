@@ -3,6 +3,7 @@ import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ProtectedAnalystEntry } from "./ProtectedAnalystEntry";
+import { foundingEvidence } from "./foundingEvidence.testFixtures";
 import type { InstalledProtectedAnalystSession } from "./installedProtectedSession";
 import type { CaseTransitionProposal } from "./protectedCaseTransitionPort";
 
@@ -76,6 +77,7 @@ function recoveryFixture() {
   let nextResult: unknown | undefined;
   let deferred: Promise<unknown> | null = null;
   const reader = {
+    readFeatureEvidence: vi.fn(async (caseId: string) => foundingEvidence(caseId, CONTEXT)),
     readQueue: vi.fn(async () => ({
       ...assignedQueue, items: revision >= 4 ? [] : assignedQueue.items,
     })),
