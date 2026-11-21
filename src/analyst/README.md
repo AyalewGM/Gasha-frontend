@@ -20,7 +20,7 @@ Open `http://127.0.0.1:5173/analyst` and use the bearer credential supplied
 by the test fixture. The lab is scoped to the fixture's `tenant-a`. Use the
 fixture's synthetic assignee reference when assigning a case. The generic
 decision-console proxy is disabled in lab mode. The lab proxy accepts only
-loopback requests on the queue, history, and five supported transition paths.
+loopback requests on the queue, history, founding-feature evidence GET, and five supported transition paths.
 Writes require same-origin JSON with a bearer credential, and the transport
 omits cookies, bypasses cache and rejects redirects. Credentials stay in memory.
 Ending a session or receiving a 401 clears case data and retires both ports.

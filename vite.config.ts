@@ -7,7 +7,7 @@ const LOCAL_HOST = /^(?:127\.0\.0\.1|localhost|\[::1\])(?::[0-9]+)?$/;
 const LOCAL_PEERS = new Set(["127.0.0.1", "::1", "::ffff:127.0.0.1"]);
 const CASES = "/v1/tenants/tenant-a/cases/";
 const CASE = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
-const GET_CASE = new RegExp(`^${CASES}(?:queue\\?limit=(?:[1-9]|[1-9][0-9]|100)|${CASE}/history)$`);
+const GET_CASE = new RegExp(`^${CASES}(?:queue\\?limit=(?:[1-9]|[1-9][0-9]|100)|${CASE}/(?:history|feature-evidence))$`);
 const POST_CASE = new RegExp(`^${CASES}${CASE}/transitions/(?:triage|assign|dispose|correct|reconcile)$`);
 
 function syntheticProxyBoundary(apiPrefix: string): Plugin {
