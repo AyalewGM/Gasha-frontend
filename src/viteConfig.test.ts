@@ -277,7 +277,7 @@ describe("dev and preview API proxy configuration", () => {
       root + caseId + "/%66eature-evidence",
       root + caseId + "/feature%2devidence",
       root + caseId + "/feature-evidence%2f",
-      root + caseId.toUpperCase() + "/feature-evidence",
+      root + "AAAAAAAA-0000-4000-8000-000000000041/feature-evidence",
       root + "not-a-uuid/feature-evidence",
     ];
     for (const path of deniedPaths) {
