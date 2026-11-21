@@ -1,4 +1,5 @@
 import { ReadOnlyAnalystJourney } from "./ReadOnlyAnalystJourney";
+import { AnalystInvestigation } from "./AnalystInvestigation";
 import {
   getInstalledProtectedAnalystSession,
   type InstalledProtectedAnalystSession,
@@ -6,7 +7,7 @@ import {
 
 /**
  * Issue #9 Phase A: default-off protected analyst route shell.
- * Never imports synthetic decisioning, supplies credentials, enables a case
+ * Never imports synthetic decisioning, supplies credentials, grants a case
  * mutation, grants authorization or treats a queue's order as approved ranking.
  */
 export function ProtectedAnalystEntry({
@@ -19,7 +20,8 @@ export function ProtectedAnalystEntry({
     typeof session.epoch !== "string" ||
     session.epoch.length === 0 ||
     typeof session.reader?.readQueue !== "function" ||
-    typeof session.reader?.readHistory !== "function"
+    typeof session.reader?.readHistory !== "function" ||
+    (session.writer !== undefined && typeof session.writer?.submit !== "function")
   ) {
     return (
       <main aria-label="Protected analyst workspace">
@@ -35,10 +37,16 @@ export function ProtectedAnalystEntry({
     <main aria-label="Protected analyst workspace">
       <h1>Gasha — Protected analyst workspace</h1>
       <p>
-        Read-only, server-ordered investigation queue. No Bank ranking approval,
-        disposition, payment execution or enforcement is supplied by this page.
+        {session.writer
+          ? "Server-ordered investigation queue with separately authorized case actions."
+          : "Read-only, server-ordered investigation queue."}
+        {" "}No Bank ranking approval, payment execution or enforcement is supplied by this page.
       </p>
-      <ReadOnlyAnalystJourney reader={session.reader} sessionEpoch={session.epoch} />
+      {session.writer ? (
+        <AnalystInvestigation key={session.epoch} session={session} />
+      ) : (
+        <ReadOnlyAnalystJourney reader={session.reader} sessionEpoch={session.epoch} />
+      )}
     </main>
   );
 }
