@@ -9,6 +9,7 @@ export function openSyntheticLabSession(credential: string, onUnauthorized: () =
 
   async function request(path: string, init: RequestInit = {}) {
     if (retired) return { status: 401 };
+    const write = init.method === "POST";
     const headers = new Headers(init.headers);
     headers.set("Authorization", `Bearer ${credential}`);
     headers.set("Accept", "application/json");
@@ -18,12 +19,15 @@ export function openSyntheticLabSession(credential: string, onUnauthorized: () =
         ...init, headers, credentials: "omit", cache: "no-store", redirect: "error",
       });
     } catch {
-      // A rejected fetch has no HTTP response. A previously validated case
-      // may retain only its retry handle; no evidence or action survives.
-      // Never classify later response-body decoding failures as an outage.
-      return { status: retired ? 401 : 503 };
+      // A dispatched POST may have committed even if its response was lost
+      // or the analyst logged out. Never report that ambiguous action as a
+      // definitive 401/no-op or silently retry it with a fresh key.
+      return { status: write ? 503 : retired ? 401 : 503 };
     }
-    if (retired) return { status: 401 };
+    // Other requests may revoke/logout during this fetch. For an in-flight
+    // POST a late non-401 reply is ambiguous, including an apparent 200 ACK.
+    // Reads must never reveal payloads from the retired session.
+    if (retired) return { status: write && response.status !== 401 ? 503 : 401 };
     if (response.status === 401) {
       retired = true;
       onUnauthorized();
@@ -33,7 +37,7 @@ export function openSyntheticLabSession(credential: string, onUnauthorized: () =
       throw new Error("Invalid synthetic lab response");
     }
     const payload: unknown = await response.json();
-    return retired ? { status: 401 } : { status: 200, payload };
+    return retired ? { status: write ? 503 : 401 } : { status: 200, payload };
   }
 
   return Object.freeze({
