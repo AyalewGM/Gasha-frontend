@@ -280,9 +280,35 @@ async function execute() {
   await inPage(page,
     "document.body.innerText.includes('Synthetic session expired or was rejected.')",
     "revocation");
-  step = "audit_outage"; python("audit-deny"); auditDenied = true;
+  // Real-browser 503 must hide controls but retain the valid synthetic
+  // session for an operator-initiated retry after durable audit recovers.
+  // This checks React UX against actual FastAPI/PostgreSQL, not an HTTP mock.
+  step = "browser_audit_outage";
+  await type(page, 'input[type="password"]', fixture.token);
+  await click(page, "Open synthetic session");
+  python("audit-deny"); auditDenied = true;
   assert.equal(await httpStatus(apiUrl + queue, fixture.token), 503);
+  await click(page, "Refresh queue");
+  await inPage(page,
+    "document.body.innerText.includes('Protected case service unavailable (503).')",
+    "browser_outage");
+  assert.equal(await page.evalPage(
+    "!!document.querySelector('[aria-label=\"Case actions\"]')",
+  ), false);
+  assert.equal(await page.evalPage(
+    "document.body.innerText.includes(" + JSON.stringify(fixture.token) + ")",
+  ), false);
+  assert.equal(await page.evalPage(
+    "document.body.innerText.includes(" + JSON.stringify(fixture.source_context) + ")",
+  ), false);
   python("audit-restore"); auditDenied = false;
+  await click(page, "Refresh queue");
+  await inPage(page,
+    "document.body.innerText.includes('Open cases on this page: 0')",
+    "browser_outage_recovery");
+  assert.equal(await page.evalPage(
+    "document.body.innerText.includes('Protected case service unavailable (503).')",
+  ), false);
   console.log("SYNTHETIC_REDIS_CHROMIUM_PASS: UC-02 Redis to PostgreSQL to protected Chromium; Bank disabled");
 }
 async function stop(processHandle) {
