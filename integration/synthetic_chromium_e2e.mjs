@@ -223,6 +223,39 @@ async function execute() {
   step = "chromium_mount";
   const page = await openBrowser(uiUrl + "/analyst");
   await inPage(page, "document.body?.innerText?.includes('Gasha analyst lab')", "mount");
+  // Exercise protected 403 and cross-tenant 404 in the actual Chromium UI,
+  // not only by direct HTTP. Neither denial may reveal case data or actions.
+  // A denied session must be explicitly ended before entering a new one.
+  step = "browser_read_denials";
+  for (const [label, credential, message] of [
+    ["insufficient_capability", fixture.no_read_token, "Case read permission denied (403)."],
+    ["foreign_tenant", fixture.foreign_token, "Case unavailable for this session (404)."],
+  ]) {
+    await type(page, 'input[type="password"]', credential);
+    await click(page, "Open synthetic session");
+    await click(page, "Refresh queue");
+    await inPage(page,
+      "document.body.innerText.includes(" + JSON.stringify(message) + ")",
+      "browser_" + label);
+    assert.equal(await page.evalPage(
+      "!!document.querySelector('[aria-label=\\\"Case actions\\\"]')",
+    ), false, "denied_case_actions_" + label);
+    assert.equal(await page.evalPage(
+      "document.body.innerText.includes('Open cases on this page:')",
+    ), false, "denied_queue_" + label);
+    for (const secret of [credential, fixture.case, fixture.source_context]) {
+      assert.equal(await page.evalPage(
+        "document.body.innerText.includes(" + JSON.stringify(secret) + ")",
+      ), false, "denied_redaction_" + label);
+    }
+    await click(page, "End session");
+    await inPage(page,
+      "!!document.querySelector('input[type=\\\"password\\\"]')",
+      "denied_session_ended_" + label);
+    assert.equal(await page.evalPage(
+      "document.body.innerText.includes(" + JSON.stringify(message) + ")",
+    ), false, "denied_error_cleared_" + label);
+  }
   step = "chromium_queue";
   await type(page, 'input[type="password"]', fixture.token);
   await click(page, "Open synthetic session");
