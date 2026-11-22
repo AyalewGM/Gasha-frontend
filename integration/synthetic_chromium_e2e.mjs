@@ -72,7 +72,8 @@ async function openBrowser(url) {
     "--headless=new", "--disable-gpu", "--disable-dev-shm-usage",
     "--disable-background-networking", "--disable-extensions",
     "--no-first-run", "--no-proxy-server", "--no-default-browser-check",
-    "--remote-debugging-port=0", "--user-data-dir=" + chromeDir, "about:blank",
+    "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
+    "--user-data-dir=" + chromeDir, "about:blank",
   ];
   if (process.getuid?.() === 0) args.push("--no-sandbox");
   chrome = spawn(browserBinary(), args, { stdio: "ignore" });
