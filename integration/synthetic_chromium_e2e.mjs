@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const PIN = "8e053ec0e973a4baf27400abad94bb1ac68676e3";
+const PIN = "222d469fc451689abe99b10f7c15ccc994ad9092";
 const SCRIPT = "integration/synthetic_mve_server.py";
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let step = "requirements", fixtureDir, manifest, fixture, chromeDir;
