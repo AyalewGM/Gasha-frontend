@@ -66,6 +66,73 @@ describe("Issue #9 default-off protected analyst composition", () => {
     expect(host.querySelector("form")).toBeNull();
     expect(reader.readHistory).not.toHaveBeenCalled();
   });
+  it("purges writable case state on in-place reader or writer rebinding with a reused epoch", async () => {
+    const caseId = "00000000-0000-4000-8000-000000000051";
+    const oldQueue = {
+      tenant_scope: "authenticated_reader",
+      ranking_policy_version: "synthetic-ranked-v1",
+      generated_at: "2026-11-05T12:00:00Z",
+      bank_ranking_approved: false,
+      enforcement_activated: false,
+      items: [{
+        rank: 1,
+        case_id: caseId,
+        source_event_id: "00000000-0000-4000-8000-000000000052",
+        source_context_ref: "c".repeat(64),
+        scenario_ids: ["ATO-02"],
+        status: "triage",
+        revision: 2,
+        created_at: "2026-11-05T10:00:00Z",
+        updated_at: "2026-11-05T11:00:00Z",
+        assignee_ref: null,
+        bank_execution: "unknown",
+      }],
+    };
+    const oldReader = { readQueue: vi.fn().mockResolvedValue(oldQueue), readHistory: vi.fn() };
+    const freshReader = { readQueue: vi.fn().mockResolvedValue(oldQueue), readHistory: vi.fn() };
+    const oldWriter = { submit: vi.fn() };
+    const freshWriter = { submit: vi.fn() };
+    const session: InstalledProtectedAnalystSession = {
+      epoch: "host-reused-epoch", reader: oldReader, writer: oldWriter,
+    };
+    const hostOwned = session as {
+      epoch: string;
+      reader: typeof oldReader;
+      writer: typeof oldWriter;
+    };
+    const refresh = () => [...host.querySelectorAll("button")].find(
+      (button) => button.textContent?.includes("Refresh queue"),
+    )!;
+
+    await act(async () => root.render(createElement(ProtectedAnalystEntry, { session })));
+    await act(async () => refresh().click());
+    expect(host.textContent).toContain(caseId);
+
+    // Until a host render, a mounted view must retain its original trusted
+    // port snapshot; never silently follow a mutated shared session object.
+    hostOwned.reader = freshReader;
+    await act(async () => refresh().click());
+    expect(oldReader.readQueue).toHaveBeenCalledTimes(2);
+    expect(freshReader.readQueue).not.toHaveBeenCalled();
+
+    // Even if the host incorrectly keeps the same session object and epoch,
+    // replacing the reader is a hard boundary on the next render.
+    await act(async () => root.render(createElement(ProtectedAnalystEntry, { session })));
+    expect(host.textContent).not.toContain(caseId);
+    expect(host.textContent).not.toContain("Open cases on this page: 1");
+    await act(async () => refresh().click());
+    expect(freshReader.readQueue).toHaveBeenCalledExactlyOnceWith(25);
+    expect(host.textContent).toContain(caseId);
+
+    // A writer rebind must also discard the previous evidence/action view.
+    hostOwned.writer = freshWriter;
+    await act(async () => root.render(createElement(ProtectedAnalystEntry, { session })));
+    expect(host.textContent).not.toContain(caseId);
+    expect(host.textContent).not.toContain("Open cases on this page: 1");
+    expect(oldWriter.submit).not.toHaveBeenCalled();
+    expect(freshWriter.submit).not.toHaveBeenCalled();
+  });
+
   it("remounts a writable investigation when a verified host replaces the session with an unchanged epoch", async () => {
     const caseId = "00000000-0000-4000-8000-000000000041";
     const sourceId = "00000000-0000-4000-8000-000000000042";
