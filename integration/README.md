@@ -6,9 +6,9 @@ This is an opt-in engineering test, never an installed Bank analyst session or p
 
 With disposable local PostgreSQL 16, Redis 7.2, Python 3.12+, Node 22 and both repositories:
 
-1. Check out backend SHA 8e053ec0e973a4baf27400abad94bb1ac68676e3 to the frontend root's backend/ directory.
+1. Check out backend SHA 222d469fc451689abe99b10f7c15ccc994ad9092 to the frontend root's backend/ directory.
 2. Install `python -m pip install -e "./backend[dev,postgres,redis]"` and `npm ci`.
-3. Set GASHA_CROSS_REPO_MVE=true, GASHA_MVE_BACKEND=backend, GASHA_MVE_BACKEND_SHA=8e053ec0e973a4baf27400abad94bb1ac68676e3, GASHA_TEST_REDIS_URL=redis://127.0.0.1:6379/15 and GASHA_TEST_POSTGRES_DSN to the disposable DB, then run `npm run test:mve` (one test command).
+3. Set GASHA_CROSS_REPO_MVE=true, GASHA_MVE_BACKEND=backend, GASHA_MVE_BACKEND_SHA=222d469fc451689abe99b10f7c15ccc994ad9092, GASHA_TEST_REDIS_URL=redis://127.0.0.1:6379/15 and GASHA_TEST_POSTGRES_DSN to the disposable DB, then run `npm run test:mve` (one test command).
 
 GitHub Actions runs the same command against disposable PostgreSQL and Redis services with backend pinned to this exact SHA. NEVER use a Bank/shared database. The runner creates and drops one fresh gasha_browser_<random> schema, and creates a mode-0600 temporary manifest for fictional credentials and selectors. A killed process may leave a disposable schema; clean that separately only after inspection.
 
