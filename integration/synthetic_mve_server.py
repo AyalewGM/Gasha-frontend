@@ -15,7 +15,10 @@ import os
 from pathlib import Path
 from secrets import token_urlsafe
 import sys
+from urllib.parse import urlsplit
 from uuid import UUID, uuid4
+
+from redis import Redis
 
 BACKEND = Path(os.environ.get("GASHA_MVE_BACKEND", "backend")).resolve()
 sys.path[:0] = [str(BACKEND / "tests"), str(BACKEND / "src")]
@@ -32,9 +35,6 @@ from test_postgres_case_writer_bridge import (
 )
 from test_postgres_evaluations import POLICY
 from test_postgres_shadow_copy_mve import TENANT, _synthetic_copy
-from test_postgres_shadow_feature_recovery import (
-    SyntheticFixtures, snapshot_for_copy,
-)
 
 from gasha.api.main import app
 from gasha.cases.evaluation_alerts import PostgresEvaluationAlertWriter, evaluation_context_ref
@@ -51,7 +51,12 @@ from gasha.ingestion.postgres_store import PostgresPendingEvaluationStore
 from gasha.ingestion.service import IngestionService
 from gasha.ingestion.shadow_copy import SyntheticShadowCopyAdapter
 from gasha.ingestion.worker import IngestionWorker
-from gasha.intelligence.synthetic_shadow_provider import SyntheticShadowWorkerEvaluator
+from gasha.intelligence.feature_set_v1 import ObservedTransfer
+from gasha.intelligence.internal_graph import InternalGraphPolicy
+from gasha.intelligence.redis_feature_history import RedisFeatureHistory
+from gasha.intelligence.synthetic_shadow_provider import (
+    RedisSyntheticHistorySource, SyntheticShadowWorkerEvaluator,
+)
 from gasha.orchestration import ShadowOrchestrator
 from gasha.postgres_evaluations import PostgresEvaluationPersistence, PostgresShadowEvaluationRepository
 from gasha.security.access import Capability, CredentialRejected
@@ -76,6 +81,25 @@ def require_disposable_db() -> None:
         raise RuntimeError("refusing non-loopback or non-disposable PostgreSQL target")
 
 
+def require_disposable_redis() -> str:
+    """Reject non-loopback, non-disposable Redis endpoints before use."""
+    endpoint = os.environ.get("GASHA_TEST_REDIS_URL", "")
+    try:
+        parsed = urlsplit(endpoint)
+        accepted = (
+            parsed.scheme == "redis"
+            and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+            and parsed.port == 6379 and parsed.path == "/15"
+            and parsed.username is None and parsed.password is None
+            and not parsed.query and not parsed.fragment
+        )
+    except ValueError:
+        accepted = False
+    if not accepted:
+        raise RuntimeError("refusing non-loopback/non-disposable Redis target")
+    return endpoint
+
+
 def settings(path: Path) -> dict[str, str]:
     value = json.loads(path.read_text())
     if value.get("scenario") != "uc02":
@@ -92,9 +116,12 @@ def seed(path: Path, scenario: str) -> None:
         raise RuntimeError("fresh manifest path required")
     name = "gasha_browser_" + uuid4().hex[:14]
     dsn = os.environ["GASHA_TEST_POSTGRES_DSN"]
+    redis_url = require_disposable_redis()
     with psycopg.connect(dsn, autocommit=True) as admin:
         admin.execute(sql.SQL("CREATE SCHEMA {}").format(sql.Identifier(name)))
+    redis_client = Redis.from_url(redis_url, socket_timeout=2, socket_connect_timeout=2)
     try:
+        assert redis_client.ping(), "synthetic Redis unavailable"
         migrations = (
             "010_security_audit_events.sql", "011_analyst_case_events.sql",
             "001_create_fraud_decision_audit.sql", "003_create_shadow_evaluations.sql",
@@ -108,6 +135,28 @@ def seed(path: Path, scenario: str) -> None:
                 db.execute((alerts.MIGRATIONS / version).read_text())
         alerts.install_policy(name, workflow.ALERT_POLICY)
         first, second = _synthetic_copy(), _synthetic_copy()
+        assert first.source_system == second.source_system == "synthetic-shadow-copy"
+        assert first.payload["beneficiary_id"] == second.payload["beneficiary_id"]
+        assert first.received_at == second.received_at
+        occurred = datetime.fromisoformat(str(first.payload["occurred_at"]))
+        redis_history = RedisFeatureHistory(
+            redis_client, tenant_id=TENANT, epoch=uuid4().hex,
+        )
+        redis_history.open_epoch(
+            covered_from=occurred - timedelta(hours=1), ttl_seconds=300,
+        )
+        for n in range(1, 6):
+            prior_time = occurred - timedelta(minutes=n)
+            assert redis_history.append(ObservedTransfer(
+                TENANT, f"prior-{n}", f"sender-{n}",
+                str(first.payload["beneficiary_id"]), None, prior_time, prior_time,
+            ))
+        history_source = RedisSyntheticHistorySource(
+            redis_history,
+            tenant_id=TENANT,
+            source_system=first.source_system,
+            graph_policy=InternalGraphPolicy(policy_version="synthetic-graph-v1"),
+        )
         consumer, batch, dead_letters = make_consumer([
             FakeRecord(json.dumps(first.model_dump(mode="json")).encode(), 1),
             FakeRecord(json.dumps(second.model_dump(mode="json")).encode(), 2),
@@ -152,16 +201,30 @@ def seed(path: Path, scenario: str) -> None:
                 recovered_consumer,
                 IngestionService({"synthetic-shadow-copy": SyntheticShadowCopyAdapter()}),
                 evaluate=SyntheticShadowWorkerEvaluator(
-                    orchestrator,
-                    history_source=SyntheticFixtures((
-                        snapshot_for_copy(first), snapshot_for_copy(second),
-                    )),
+                    orchestrator, history_source=history_source,
                 ),
                 pending=PostgresPendingEvaluationStore(
                     db, tenant_ids=(TENANT,), worker_id="browser-mve-recovered",
                 ),
                 worker_id="browser-mve-recovered", tenant_ids=(TENANT,),
+                retry_backoff=timedelta(0), max_evaluation_attempts=4,
                 dead_letters=recovered_dlq,
+            )
+            # Unsealed Redis cannot authorize even one shadow evidence write.
+            assert recovered.run_once(max_events=1) == 0
+            assert db.execute(
+                "SELECT count(*) AS n FROM pending_evaluations"
+            ).fetchone()["n"] == 2
+            for table in (
+                "shadow_evaluations", "evaluation_alerts",
+                "analyst_case_events", "fraud_decision_audit",
+                "security_audit_events",
+            ):
+                assert db.execute(
+                    f"SELECT count(*) AS n FROM {table}"
+                ).fetchone()["n"] == 0, "unsealed Redis committed evidence"
+            redis_history.seal(
+                available_through=max(first.received_at, second.received_at),
             )
             assert recovered.run_once(max_events=1) == 0
             assert recovered.run_once(max_events=1) == 0
@@ -176,6 +239,33 @@ def seed(path: Path, scenario: str) -> None:
                 "shadow_evaluations": 2, "evaluation_alerts": 2,
                 "analyst_case_events": 1, "fraud_decision_audit": 2,
             }, counts
+            assert db.execute(
+                "SELECT count(*) AS n FROM pending_evaluations"
+            ).fetchone()["n"] == 0
+            assert db.execute(
+                "SELECT count(*) AS n FROM security_audit_events "
+                "WHERE action='alert.generate'"
+            ).fetchone()["n"] == 2
+            recorded_alerts = db.execute(
+                "SELECT event_id, case_id FROM evaluation_alerts"
+            ).fetchall()
+            assert len(recorded_alerts) == 2
+            assert len({a["case_id"] for a in recorded_alerts}) == 1
+            for item in recorded_alerts:
+                saved = PostgresShadowEvaluationRepository(
+                    db, tenant_ids=(TENANT,),
+                ).get(TENANT, UUID(str(item["event_id"])))
+                assert saved is not None and saved.feature_evidence is not None
+                assert saved.feature_evidence.eligible_observations == 5
+                assert "sender_beneficiary_history_coverage" in (
+                    saved.feature_evidence.unavailable_signals
+                )
+            # Empty-consumer replay cannot generate duplicate alerts or audit.
+            assert recovered.run_once(max_events=1) == 0
+            assert db.execute(
+                "SELECT count(*) AS n FROM security_audit_events "
+                "WHERE action='alert.generate'"
+            ).fetchone()["n"] == 2
             founder = db.execute(
                 "SELECT case_id, source_event_id, source_context_ref "
                 "FROM analyst_case_events WHERE revision=1"
@@ -201,11 +291,16 @@ def seed(path: Path, scenario: str) -> None:
             json.dump(manifest, private_file)
         if path.stat().st_mode & 0o777 != 0o600:
             raise RuntimeError("synthetic credential manifest has unsafe file mode")
-        print("SYNTHETIC_SEED_OK alerts=2 founding_cases=1 pending=0", flush=True)
+        print(
+            "SYNTHETIC_SEED_OK redis_sealed=true eligible_observations=5 "
+            "alerts=2 founding_cases=1 pending=0", flush=True,
+        )
     except BaseException:
         path.unlink(missing_ok=True)
         drop(name)
         raise
+    finally:
+        redis_client.close()
 
 
 def drop(name: str) -> None:
@@ -356,7 +451,12 @@ def verify(manifest: dict[str, str]) -> None:
         source_record = PostgresShadowEvaluationRepository(
             db, tenant_ids=(TENANT,),
         ).get(TENANT, UUID(manifest["source_event"]))
-        assert source_record is not None
+        assert source_record is not None and source_record.feature_evidence is not None
+        evidence = source_record.feature_evidence
+        assert evidence.eligible_observations == 5, "redis_observation_count"
+        assert "sender_beneficiary_history_coverage" in evidence.unavailable_signals, (
+            "lifetime_relationship_absence_must_remain_unavailable"
+        )
     print("SYNTHETIC_INTERNAL_AFTER_SOURCE", flush=True)
     try:
         summary = summarize_synthetic_case_metrics(
@@ -401,7 +501,8 @@ def verify(manifest: dict[str, str]) -> None:
     assert summary["bank_operational_kpi_authorized"] is False, "metrics_bank_authority"
     assert summary["enforcement_activated"] is False, "metrics_enforcement"
     print(
-        "SYNTHETIC_VERIFY_OK alerts=2 founding_cases=1 "
+        "SYNTHETIC_VERIFY_OK redis_derived=true eligible_observations=5 "
+        "lifetime_history=unavailable alerts=2 founding_cases=1 "
         "case_revisions=5 pending=0 disposition=unresolved "
         "enforcement_activated=false bank_execution=unknown",
         flush=True,

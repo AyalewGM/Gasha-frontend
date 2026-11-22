@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dirname, "..");
-const PIN = "7e3e4370ca168c935da5ecb6cb7d9dc96ad377a6";
+const PIN = "8e053ec0e973a4baf27400abad94bb1ac68676e3";
 const SCRIPT = "integration/synthetic_mve_server.py";
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 let step = "requirements", fixtureDir, manifest, fixture, chromeDir;
@@ -202,6 +202,8 @@ async function execute() {
   assert.equal(await httpStatus(apiUrl + queue, fixture.no_read_token), 403);
   assert.equal(await httpStatus(apiUrl + queue, fixture.foreign_token), 404);
   assert.equal(await httpStatus(apiUrl + prefix + fixture.case + "/history", fixture.foreign_token), 404);
+  assert.equal(await httpStatus(apiUrl + prefix + fixture.case + "/feature-evidence", fixture.foreign_token), 404);
+  assert.equal(await httpStatus(apiUrl + prefix + fixture.case + "/feature-evidence", fixture.no_read_token), 403);
   assert.equal(await httpStatus(apiUrl + queue, fixture.no_read_token, {
     headers: { "X-Tenant-Id": "tenant-a", "X-Role": "admin", "X-Capability": "case.read" },
   }), 403);
@@ -229,6 +231,19 @@ async function execute() {
   await inPage(page, "document.body.innerText.includes('MM-02')", "ranking");
   await click(page, "Open case");
   await inPage(page, "document.body.innerText.includes('Founding-event evidence')", "evidence");
+  await inPage(page, "(() => { const e = document.querySelector('section[aria-label=\"Founding-event evidence\"]'); if (!e) return false; const label = [...e.querySelectorAll('dt')].find(n => n.textContent.trim() === 'Eligible observations'); return label?.nextElementSibling?.textContent.trim() === '5' && e.innerText.includes('sender_beneficiary_history_coverage'); })()", "redis_founding_evidence");
+  const evidenceReply = await fetch(apiUrl + prefix + fixture.case + "/feature-evidence", {
+    headers: { Authorization: "Bearer " + fixture.token }, cache: "no-store",
+  });
+  assert.equal(evidenceReply.status, 200);
+  const evidenceView = await evidenceReply.json();
+  assert.equal(evidenceView.bank_source_attested, false);
+  assert.equal(evidenceView.enforcement_activated, false);
+  assert.equal(evidenceView.feature_evidence.source_assurance, "synthetic_unattested");
+  assert.equal(evidenceView.feature_evidence.eligible_observations, 5);
+  assert.ok(evidenceView.feature_evidence.unavailable_signals.includes(
+    "sender_beneficiary_history_coverage"
+  ));
   await inPage(page, "document.body.innerText.includes('Revision 1: create')", "history");
   await inPage(page, "document.body.innerText.includes('synthetic; not Bank-attested')", "provenance");
   step = "chromium_actions";
@@ -268,7 +283,7 @@ async function execute() {
   step = "audit_outage"; python("audit-deny"); auditDenied = true;
   assert.equal(await httpStatus(apiUrl + queue, fixture.token), 503);
   python("audit-restore"); auditDenied = false;
-  console.log("SYNTHETIC_CHROMIUM_PASS: UC-02 browser, PG, audit, unresolved; Bank disabled");
+  console.log("SYNTHETIC_REDIS_CHROMIUM_PASS: UC-02 Redis to PostgreSQL to protected Chromium; Bank disabled");
 }
 async function stop(processHandle) {
   if (!processHandle || processHandle.exitCode !== null) return;
