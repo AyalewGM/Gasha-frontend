@@ -5,6 +5,19 @@ import {
   type InstalledProtectedAnalystSession,
 } from "./installedProtectedSession";
 
+// A newly verified host composition must not inherit case/history/action
+// state from a previous session even if the host accidentally reuses an epoch.
+// Session object identity is a second, independent UI-isolation boundary.
+const verifiedSessionViewKeys = new WeakMap<InstalledProtectedAnalystSession, number>();
+let nextVerifiedSessionViewKey = 0;
+function verifiedSessionViewKey(session: InstalledProtectedAnalystSession): number {
+  const existing = verifiedSessionViewKeys.get(session);
+  if (existing !== undefined) return existing;
+  const fresh = ++nextVerifiedSessionViewKey;
+  verifiedSessionViewKeys.set(session, fresh);
+  return fresh;
+}
+
 /**
  * Issue #9 Phase A: default-off protected analyst route shell.
  * Never imports synthetic decisioning, supplies credentials, grants a case
@@ -33,6 +46,8 @@ export function ProtectedAnalystEntry({
     );
   }
 
+  const viewKey = `${session.epoch}:${verifiedSessionViewKey(session)}`;
+
   return (
     <main aria-label="Protected analyst workspace">
       <h1>Gasha — Protected analyst workspace</h1>
@@ -43,9 +58,9 @@ export function ProtectedAnalystEntry({
         {" "}No Bank ranking approval, payment execution or enforcement is supplied by this page.
       </p>
       {session.writer ? (
-        <AnalystInvestigation key={session.epoch} session={session} />
+        <AnalystInvestigation key={viewKey} session={session} />
       ) : (
-        <ReadOnlyAnalystJourney reader={session.reader} sessionEpoch={session.epoch} />
+        <ReadOnlyAnalystJourney key={viewKey} reader={session.reader} sessionEpoch={session.epoch} />
       )}
     </main>
   );
