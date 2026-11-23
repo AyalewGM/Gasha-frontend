@@ -220,9 +220,39 @@ async function execute() {
     uiUrl + "/__gasha_analyst_lab/v1/tenants/tenant-b/cases/queue?limit=25",
     fixture.token,
   ), 403);
+  // Reject cookie-based or cross-origin synthetic writes at the real Vite
+  // boundary, before FastAPI can see the request. An intentionally malformed
+  // body makes this a no-mutation negative test even if the boundary regresses.
+  step = "proxy_write_denials";
+  const triageProxy = uiUrl + "/__gasha_analyst_lab" + prefix +
+    fixture.case + "/transitions/triage";
+  for (const headers of [
+    { "Content-Type": "application/json" },
+    { "Content-Type": "application/json", Origin: "https://untrusted.example" },
+    { "Content-Type": "application/json", Origin: uiUrl,
+      Cookie: "bank-session=must-not-forward" },
+  ]) {
+    assert.equal(await httpStatus(triageProxy, fixture.token, {
+      method: "POST", headers, body: "{}",
+    }), 403, "synthetic_write_origin_or_cookie_denial");
+  }
   step = "chromium_mount";
   const page = await openBrowser(uiUrl + "/analyst");
   await inPage(page, "document.body?.innerText?.includes('Gasha analyst lab')", "mount");
+  // In a genuine browser, an unprivileged principal cannot grant itself
+  // server-owned case-read authority by supplying tenant or capability headers.
+  step = "browser_authority_denial";
+  const browserForgedRead = await page.evalPage(`
+    (async () => (await fetch(
+      ${JSON.stringify("/__gasha_analyst_lab" + queue + "?limit=25")}, {
+      headers: {
+        Authorization: ${JSON.stringify("Bearer " + fixture.no_read_token)},
+        "X-Tenant-Id": "tenant-a", "X-Role": "admin", "X-Capability": "case.read"
+      },
+      credentials: "omit", cache: "no-store",
+    })).status)()
+  `);
+  assert.equal(browserForgedRead, 403, "browser_cannot_grant_case_read");
   // Exercise protected 403 and cross-tenant 404 in the actual Chromium UI,
   // not only by direct HTTP. Neither denial may reveal case data or actions.
   // A denied session must be explicitly ended before entering a new one.
